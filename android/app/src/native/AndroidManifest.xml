@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Aegis Native Flavor Manifest — Phase E
+  =======================================
+  This manifest is MERGED with the main AndroidManifest.xml for the "native" flavor.
+  It explicitly declares all SMS permissions and components.
+
+  The native flavor is the full default SMS app implementation:
+  - All SMS permissions
+  - All 4 required components (BroadcastReceiver x2, Service, Activity)
+  - Auto SMS reading
+  - System notifications with OTP blur
+  - FLAG_SECURE screenshot protection
+
+  This flavor is distributed as a sideloaded APK (not Play Store).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Explicitly declare all SMS permissions (already in main manifest, but explicit for clarity) -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.WRITE_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_MMS" />
+    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
+
+    <!-- All SMS components are already registered in the main manifest.
+         This file exists to explicitly confirm they are included in the native flavor.
+         No additional changes needed — the main manifest's receivers/services
+         are kept (not removed) for the native flavor. -->
+
+</manifest>

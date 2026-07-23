@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Aegis</string>
+    <string name="app_description">SMS Finance Tracker for India</string>
+    <string name="notification_channel_sms">Incoming SMS</string>
+    <string name="notification_channel_sms_description">Notifications for incoming SMS messages</string>
+    <string name="action_reply">Reply</string>
+    <string name="action_mark_read">Mark as read</string>
+    <string name="default_sms_app_explanation">Aegis needs to be your default SMS app to automatically read and parse incoming SMS messages. This means Aegis will replace your current messaging app (e.g., Google Messages). You can change back anytime in Android Settings.</string>
+</resources>

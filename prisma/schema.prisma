@@ -1,0 +1,272 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// A parsed/ingested SMS transaction. Only `verified` classification feeds totals.
+model Transaction {
+  id            String   @id @default(cuid())
+  // credit / debit
+  type          String
+  amount        Float
+  merchant      String?
+  // masked account / card / UPI reference
+  accountMasked String?
+  balance       Float?
+  // ISO date string parsed from SMS (or fallback to receivedAt)
+  txDate        DateTime
+  bank          String?
+  sender        String?
+  // bank | paymentsBank | nbfc | wallet | creditCard | unknown
+  senderType    String  @default("unknown")
+  category      String?
+  // verified | unverified | flagged
+  classification String @default("verified")
+  rawMessage    String
+  // user-added note/tag
+  note          String?
+  // linking to loan (if this is an EMI debit)
+  loanId        String?
+  loan          LoanAccount? @relation(fields: [loanId], references: [id], onDelete: SetNull)
+  // misc parsed fields stored as JSON string
+  extra         String?
+  // Unique idempotency key to prevent duplicate transaction creation on retries
+  idempotencyKey String?  @unique
+  receivedAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  splits        Split[]
+
+  @@index([classification])
+  @@index([txDate])
+  @@index([type])
+  @@index([idempotencyKey])
+}
+
+// Recurring loan/EMI obligations.
+model LoanAccount {
+  id            String   @id @default(cuid())
+  lender        String
+  loanType      String   @default("personal") // personal | homeLoan | creditCardEMI | consumerDurable | autoLoan | other
+  loanRef       String?  // loan id or last 4 digits
+  principal     Float?
+  emiAmount     Float?
+  dueDay        Int?     // day of month
+  tenure        Int?     // months
+  interestRate  Float?   // annual interest rate %
+  startDate     DateTime?
+  status        String   @default("active") // active | closed | overdue
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  transactions  Transaction[]
+  documents     DocumentRecord[]
+}
+
+// Flagged or promotional messages, kept separate from real transactions.
+model FlaggedMessage {
+  id            String   @id @default(cuid())
+  sender        String?
+  content       String
+  // flagged | unverified
+  classification String @default("flagged")
+  reason        String
+  // which heuristics triggered
+  signals       String?  // JSON array of signal keys
+  receivedAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+}
+
+// Singleton-ish settings row (key/value style for flexibility).
+model Setting {
+  key   String @id
+  value String
+}
+
+// Monthly budgets per category.
+model Budget {
+  id        String   @id @default(cuid())
+  category  String   @unique
+  amount    Float
+  period    String   @default("monthly") // monthly (only supported for now)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// User-confirmed merchant → category overrides (feedback loop).
+// When a user manually changes a transaction's category, we remember it
+// so future transactions from the same merchant get auto-assigned the same category.
+model MerchantOverride {
+  id        String   @id @default(cuid())
+  merchant  String   @unique // normalized upper-case merchant name
+  category  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Savings goals — user-defined targets with optional deadline.
+// Progress is computed from net savings (credited - debited) within the goal period,
+// or from total credited if goalType is "income".
+model Goal {
+  id          String    @id @default(cuid())
+  name        String
+  target      Float
+  goalType    String    @default("savings") // savings | income | debt
+  // optional deadline ISO date
+  deadline    DateTime?
+  status      String    @default("active") // active | completed | paused
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  milestones  Milestone[]
+}
+
+// Milestones — sub-targets within a goal (e.g., 25%, 50%, 75% checkpoints).
+model Milestone {
+  id          String   @id @default(cuid())
+  goalId      String
+  goal        Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  name        String
+  target      Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Transaction splits — break a single transaction across multiple categories.
+// The sum of split amounts should equal the parent transaction's amount.
+model Split {
+  id            String   @id @default(cuid())
+  transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  category      String
+  amount        Float
+  note          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Every ingested SMS — the single source of truth for Inbox, Reports, and RAG.
+// Not just parsed transactions: every SMS the app reads gets a row here.
+model SmsMessage {
+  id               String   @id @default(cuid())
+  rawText          String
+  sender           String?
+  senderType       String   @default("unknown") // bank | paymentsBank | nbfc | wallet | creditCard | unknown | other
+  receivedAt       DateTime @default(now())
+  language         String?
+  classification   String   @default("unparsed") // verified | unverified | flagged | unparsed
+  linkedRecordType String?  // transaction | loan | flaggedMessage | null
+  linkedRecordId   String?
+  createdAt        DateTime @default(now())
+
+  @@index([receivedAt])
+  @@index([classification])
+  @@index([sender])
+}
+
+// Natural-language Q&A history (Tier 2 intelligence engine).
+model QueryHistory {
+  id         String   @id @default(cuid())
+  question   String
+  answer     String
+  sourceIds  String   // JSON array of SmsMessage/Transaction IDs used
+  confidence String   @default("high") // high | medium | low
+  createdAt  DateTime @default(now())
+}
+
+// Uploaded documents (loan agreements, EMI schedules, bank statements).
+model DocumentRecord {
+  id                   String   @id @default(cuid())
+  documentType         String   // loanAgreement | emiSchedule | bankStatement
+  fileName             String
+  sourceInstitution    String?
+  extractionStatus     String   @default("pending") // pending | parsed | needsReview | failed
+  extractedFields      String?  // JSON string, shape depends on documentType
+  linkedLoanId         String?
+  linkedLoan           LoanAccount? @relation(fields: [linkedLoanId], references: [id], onDelete: SetNull)
+  reconciliationSummary String? // JSON string, for bank statements
+  uploadedAt           DateTime @default(now())
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  vault                DocumentVault?
+}
+
+// Encrypted document vault — stores original document content encrypted.
+// Linked to DocumentRecord for lender pipeline.
+model DocumentVault {
+  id              String   @id @default(cuid())
+  documentId      String   @unique
+  document        DocumentRecord @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  encryptedContent String   // AES-GCM encrypted base64 content
+  contentHash     String   // SHA-256 hash for integrity verification
+  isEncrypted     Boolean  @default(true)
+  createdAt       DateTime @default(now())
+}
+
+// Conversation metadata — per-sender settings for the messaging UI.
+// Keyed by sender (phone number or alphanumeric sender ID).
+model Conversation {
+  id          String   @id @default(cuid())
+  sender      String   @unique // the sender address (phone or alphanumeric)
+  isPinned    Boolean  @default(false)
+  isArchived  Boolean  @default(false)
+  isMuted     Boolean  @default(false)
+  isStarred   Boolean  @default(false)
+  displayName String?  // user-set custom name for this sender
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Blocked senders — spam/block list for the messaging app.
+model BlockedSender {
+  id          String   @id @default(cuid())
+  sender      String   @unique
+  reason      String   @default("user_blocked") // user_blocked | spam | scam
+  blockedAt   DateTime @default(now())
+}
+
+// Scheduled messages — messages queued to send at a future time.
+model ScheduledMessage {
+  id          String   @id @default(cuid())
+  recipient   String
+  body        String
+  scheduledAt DateTime
+  status      String   @default("pending") // pending | sent | cancelled
+  createdAt   DateTime @default(now())
+}
+
+// Staging table for document extraction candidates before user confirmation.
+model ExtractedDataCandidate {
+  id                 String   @id @default(cuid())
+  documentId         String
+  fieldType          String   // date | amount | balance | referenceNumber | counterparty | accountNumber | ifsc | statementPeriod | emiAmount | dueDate | unknown
+  suggestedComponent String   // transaction-credit | transaction-debit | loan-emi | account-metadata | unclassified
+  extractedValue     String   // JSON string or raw text payload
+  confidence         Float    // 0.0 to 1.0 confidence score
+  sourceLocation     String   // page/line reference (e.g., "Page 1, Line 14")
+  userDecision       String?  // null until user acts: 'accepted' | 'reassigned' | 'ignored'
+  reassignedTo       String?  // if user picked a different component than suggested
+  createdAt          DateTime @default(now())
+
+  @@index([documentId])
+  @@index([userDecision])
+}
+
+// Autonomous background pipeline health & execution tracking.
+model SystemHealthLog {
+  id               String   @id @default(cuid())
+  jobName          String   // backgroundReconciliation | retryExtraction | healthCheck
+  status           String   // success | warning | error
+  message          String
+  metrics          String?  // JSON payload of metrics (e.g. stuckCount, lowConfidenceCount)
+  executedAt       DateTime @default(now())
+
+  @@index([jobName])
+  @@index([executedAt])
+}

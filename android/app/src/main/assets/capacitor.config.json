@@ -1,0 +1,19 @@
+{
+	"appId": "com.aegis.sms",
+	"appName": "Aegis",
+	"webDir": "out",
+	"server": {
+		"androidScheme": "https",
+		"hostname": "aegis.app"
+	},
+	"android": {
+		"allowMixedContent": false,
+		"captureInput": true,
+		"webContentsDebuggingEnabled": false
+	},
+	"plugins": {
+		"AegisSmsPlugin": {
+			"autoRequestPermissions": false
+		}
+	}
+}

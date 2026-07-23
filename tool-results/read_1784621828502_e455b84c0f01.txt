@@ -1,0 +1,1507 @@
+     1→     1→"use client";
+     2→     2→
+     3→     3→import { Card } from "@/components/ui/card";
+     4→     4→import { Badge } from "@/components/ui/badge";
+     5→     5→import { Button } from "@/components/ui/button";
+     6→     6→import {
+     7→     7→  Landmark,
+     8→     8→  Trash2,
+     9→     9→  Plus,
+    10→    10→  CalendarClock,
+    11→    11→  FileText,
+    12→    12→  Shield,
+    13→    13→  Loader2,
+    14→    14→  Search,
+    15→    15→  LayoutGrid,
+    16→    16→  List as ListIcon,
+    17→    17→  Pencil,
+    18→    18→  AlertTriangle,
+    19→    19→  CheckCircle2,
+    20→    20→  Clock,
+    21→    21→  TrendingDown,
+    22→    22→  Wallet,
+    23→    23→  CalendarDays,
+    24→    24→  IndianRupee,
+    25→    25→  Upload,
+    26→    26→  Sparkles,
+    27→    27→} from "lucide-react";
+    28→    28→import type { LoanRow, UpcomingEmi } from "./use-sms-data";
+    29→    29→import { useDeleteLoan, useLoanSchedule, useUpdateLoan } from "./use-sms-data";
+    30→    30→import { formatINR, formatINRShort, formatDate } from "./format";
+    31→    31→import { toast } from "sonner";
+    32→    32→import { useState, useEffect, useMemo } from "react";
+    33→    33→import {
+    34→    34→  Dialog,
+    35→    35→  DialogContent,
+    36→    36→  DialogHeader,
+    37→    37→  DialogTitle,
+    38→    38→  DialogFooter,
+    39→    39→  DialogDescription,
+    40→    40→} from "@/components/ui/dialog";
+    41→    41→import {
+    42→    42→  Sheet,
+    43→    43→  SheetContent,
+    44→    44→  SheetHeader,
+    45→    45→  SheetTitle,
+    46→    46→  SheetDescription,
+    47→    47→} from "@/components/ui/sheet";
+    48→    48→import {
+    49→    49→  Tabs,
+    50→    50→  TabsList,
+    51→    51→  TabsTrigger,
+    52→    52→  TabsContent,
+    53→    53→} from "@/components/ui/tabs";
+    54→    54→import { Input } from "@/components/ui/input";
+    55→    55→import { Label } from "@/components/ui/label";
+    56→    56→import { Progress } from "@/components/ui/progress";
+    57→    57→import { CheckCircle2 as CheckCircle, Clock as ClockIcon, AlertTriangle as AlertIcon } from "lucide-react";
+    58→    58→import {
+    59→    59→  Select,
+    60→    60→  SelectContent,
+    61→    61→  SelectItem,
+    62→    62→  SelectTrigger,
+    63→    63→  SelectValue,
+    64→    64→} from "@/components/ui/select";
+    65→    65→import { useQueryClient } from "@tanstack/react-query";
+    66→    66→import { cn } from "@/lib/utils";
+    67→    67→
+    68→    68→// =====================================================
+    69→    69→//  Main Loans Section
+    70→    70→// =====================================================
+    71→    71→export function LoansSection({
+    72→    72→  loans,
+    73→    73→  upcoming,
+    74→    74→  loading,
+    75→    75→  onUploadDocument,
+    76→    76→}: {
+    77→    77→  loans?: LoanRow[];
+    78→    78→  upcoming?: UpcomingEmi[];
+    79→    79→  loading: boolean;
+    80→    80→  onUploadDocument?: () => void;
+    81→    81→}) {
+    82→    82→  const [search, setSearch] = useState("");
+    83→    83→  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "overdue" | "closed">("all");
+    84→    84→  const [view, setView] = useState<"card" | "list">("card");
+    85→    85→  const [showAdd, setShowAdd] = useState(false);
+    86→    86→  const [detailLoan, setDetailLoan] = useState<LoanRow | null>(null);
+    87→    87→  const [detailTab, setDetailTab] = useState<"overview" | "schedule" | "documents" | "edit">("overview");
+    88→    88→
+    89→    89→  const delMut = useDeleteLoan();
+    90→    90→
+    91→    91→  // ---- Derived KPIs ----
+    92→    92→  const stats = useMemo(() => {
+    93→    93→    if (!loans) return { active: 0, monthlyEmi: 0, nextDue: null as UpcomingEmi | null, overdueCount: 0, overdueAmount: 0, totalPrincipal: 0 };
+    94→    94→    const active = loans.filter((l) => l.status === "active" || l.status === "overdue");
+    95→    95→    const monthlyEmi = active.reduce((s, l) => s + (l.emiAmount ?? 0), 0);
+    96→    96→    const totalPrincipal = active.reduce((s, l) => s + (l.principal ?? 0), 0);
+    97→    97→    const overdueLoans = active.filter((l) => l.status === "overdue");
+    98→    98→    const nextDue = upcoming && upcoming.length > 0 ? upcoming[0] : null;
+    99→    99→    return {
+   100→   100→      active: active.length,
+   101→   101→      monthlyEmi,
+   102→   102→      nextDue,
+   103→   103→      overdueCount: overdueLoans.length,
+   104→   104→      overdueAmount: overdueLoans.reduce((s, l) => s + (l.emiAmount ?? 0), 0),
+   105→   105→      totalPrincipal,
+   106→   106→    };
+   107→   107→  }, [loans, upcoming]);
+   108→   108→
+   109→   109→  // ---- Filtered loans ----
+   110→   110→  const filtered = useMemo(() => {
+   111→   111→    if (!loans) return [];
+   112→   112→    let out = loans;
+   113→   113→    if (statusFilter !== "all") {
+   114→   114→      out = out.filter((l) =>
+   115→   115→        statusFilter === "active" ? l.status === "active" :
+   116→   116→        statusFilter === "overdue" ? l.status === "overdue" :
+   117→   117→        l.status === "closed"
+   118→   118→      );
+   119→   119→    }
+   120→   120→    if (search.trim()) {
+   121→   121→      const q = search.trim().toLowerCase();
+   122→   122→      out = out.filter((l) =>
+   123→   123→        l.lender.toLowerCase().includes(q) ||
+   124→   124→        (l.loanRef ?? "").toLowerCase().includes(q) ||
+   125→   125→        prettyLoanType(l.loanType).toLowerCase().includes(q)
+   126→   126→      );
+   127→   127→    }
+   128→   128→    return out;
+   129→   129→  }, [loans, statusFilter, search]);
+   130→   130→
+   131→   131→  const onDelete = async (id: string) => {
+   132→   132→    if (!confirm("Delete this loan? Linked transactions will be unlinked but kept.")) return;
+   133→   133→    try {
+   134→   134→      await delMut.mutateAsync(id);
+   135→   135→      toast.success("Loan deleted");
+   136→   136→    } catch (e) {
+   137→   137→      toast.error(e instanceof Error ? e.message : "Delete failed");
+   138→   138→    }
+   139→   139→  };
+   140→   140→
+   141→   141→  const openDetail = (loan: LoanRow, tab: "overview" | "schedule" | "documents" | "edit" = "overview") => {
+   142→   142→    setDetailLoan(loan);
+   143→   143→    setDetailTab(tab);
+   144→   144→  };
+   145→   145→
+   146→   146→  return (
+   147→   147→    <div className="space-y-5">
+   148→   148→      {/* ---------- KPI Header Cards ---------- */}
+   149→   149→      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+   150→   150→        <KpiCard
+   151→   151→          icon={<Landmark className="h-4 w-4" />}
+   152→   152→          label="Active Loans"
+   153→   153→          value={loading ? "—" : String(stats.active)}
+   154→   154→          sub={loading ? "" : `${loans?.length ?? 0} total`}
+   155→   155→          tone="primary"
+   156→   156→        />
+   157→   157→        <KpiCard
+   158→   158→          icon={<IndianRupee className="h-4 w-4" />}
+   159→   159→          label="Monthly EMI"
+   160→   160→          value={loading ? "—" : formatINRShort(stats.monthlyEmi)}
+   161→   161→          sub={loading ? "" : "Total burden"}
+   162→   162→          tone="emerald"
+   163→   163→        />
+   164→   164→        <KpiCard
+   165→   165→          icon={<CalendarDays className="h-4 w-4" />}
+   166→   166→          label="Next Due"
+   167→   167→          value={loading ? "—" : stats.nextDue ? formatNextDue(stats.nextDue.nextDue) : "None"}
+   168→   168→          sub={loading ? "" : stats.nextDue ? `${formatINRShort(stats.nextDue.emiAmount ?? 0)} · ${stats.nextDue.lender}` : "All clear"}
+   169→   169→          tone={stats.nextDue?.overdue ? "rose" : "amber"}
+   170→   170→        />
+   171→   171→        <KpiCard
+   172→   172→          icon={<AlertTriangle className="h-4 w-4" />}
+   173→   173→          label="Overdue"
+   174→   174→          value={loading ? "—" : String(stats.overdueCount)}
+   175→   175→          sub={loading ? "" : stats.overdueCount > 0 ? formatINRShort(stats.overdueAmount) : "No overdue"}
+   176→   176→          tone={stats.overdueCount > 0 ? "rose" : "muted"}
+   177→   177→        />
+   178→   178→      </div>
+   179→   179→
+   180→   180→      {/* ---------- Toolbar ---------- */}
+   181→   181→      <Card className="p-3 sm:p-4">
+   182→   182→        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+   183→   183→          {/* Search */}
+   184→   184→          <div className="relative flex-1 max-w-xs">
+   185→   185→            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+   186→   186→            <Input
+   187→   187→              value={search}
+   188→   188→              onChange={(e) => setSearch(e.target.value)}
+   189→   189→              placeholder="Search lender, ref, type…"
+   190→   190→              className="h-9 pl-8 text-sm"
+   191→   191→            />
+   192→   192→          </div>
+   193→   193→
+   194→   194→          {/* Status filter pills */}
+   195→   195→          <div className="flex items-center gap-1 rounded-lg border bg-muted/30 p-1">
+   196→   196→            {(["all", "active", "overdue", "closed"] as const).map((s) => (
+   197→   197→              <button
+   198→   198→                key={s}
+   199→   199→                onClick={() => setStatusFilter(s)}
+   200→   200→                className={cn(
+   201→   201→                  "rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors",
+   202→   202→                  statusFilter === s
+   203→   203→                    ? "bg-background text-foreground shadow-sm"
+   204→   204→                    : "text-muted-foreground hover:text-foreground"
+   205→   205→                )}
+   206→   206→              >
+   207→   207→                {s}
+   208→   208→              </button>
+   209→   209→            ))}
+   210→   210→          </div>
+   211→   211→
+   212→   212→          {/* View toggle + Add */}
+   213→   213→          <div className="flex items-center gap-2">
+   214→   214→            <div className="flex items-center gap-0.5 rounded-lg border bg-muted/30 p-0.5">
+   215→   215→              <button
+   216→   216→                onClick={() => setView("card")}
+   217→   217→                className={cn(
+   218→   218→                  "grid h-7 w-7 place-items-center rounded-md transition-colors",
+   219→   219→                  view === "card" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+   220→   220→                )}
+   221→   221→                title="Card view"
+   222→   222→              >
+   223→   223→                <LayoutGrid className="h-3.5 w-3.5" />
+   224→   224→              </button>
+   225→   225→              <button
+   226→   226→                onClick={() => setView("list")}
+   227→   227→                className={cn(
+   228→   228→                  "grid h-7 w-7 place-items-center rounded-md transition-colors",
+   229→   229→                  view === "list" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+   230→   230→                )}
+   231→   231→                title="List view"
+   232→   232→              >
+   233→   233→                <ListIcon className="h-3.5 w-3.5" />
+   234→   234→              </button>
+   235→   235→            </div>
+   236→   236→            <Button
+   237→   237→              size="sm"
+   238→   238→              onClick={() => setShowAdd(true)}
+   239→   239→              className="h-9 gap-1.5"
+   240→   240→            >
+   241→   241→              <Plus className="h-3.5 w-3.5" />
+   242→   242→              Add Loan
+   243→   243→            </Button>
+   244→   244→          </div>
+   245→   245→        </div>
+   246→   246→      </Card>
+   247→   247→
+   248→   248→      {/* ---------- Loans list ---------- */}
+   249→   249→      {loading ? (
+   250→   250→        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+   251→   251→          {Array.from({ length: 3 }).map((_, i) => (
+   252→   252→            <div key={i} className="h-44 rounded-xl shimmer" />
+   253→   253→          ))}
+   254→   254→        </div>
+   255→   255→      ) : filtered.length === 0 ? (
+   256→   256→        <EmptyState
+   257→   257→          hasAny={!!loans && loans.length > 0}
+   258→   258→          onAdd={() => setShowAdd(true)}
+   259→   259→          onUpload={onUploadDocument}
+   260→   260→        />
+   261→   261→      ) : view === "card" ? (
+   262→   262→        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+   263→   263→          {filtered.map((l, i) => (
+   264→   264→            <LoanCard
+   265→   265→              key={l.id}
+   266→   266→              loan={l}
+   267→   267→              upcoming={upcoming?.find((u) => u.id === l.id)}
+   268→   268→              index={i}
+   269→   269→              onOpen={(tab) => openDetail(l, tab)}
+   270→   270→              onDelete={() => onDelete(l.id)}
+   271→   271→            />
+   272→   272→          ))}
+   273→   273→        </div>
+   274→   274→      ) : (
+   275→   275→        <Card className="overflow-hidden">
+   276→   276→          <div className="divide-y">
+   277→   277→            {filtered.map((l) => (
+   278→   278→              <LoanListRow
+   279→   279→                key={l.id}
+   280→   280→                loan={l}
+   281→   281→                upcoming={upcoming?.find((u) => u.id === l.id)}
+   282→   282→                onOpen={(tab) => openDetail(l, tab)}
+   283→   283→                onDelete={() => onDelete(l.id)}
+   284→   284→              />
+   285→   285→            ))}
+   286→   286→          </div>
+   287→   287→        </Card>
+   288→   288→      )}
+   289→   289→
+   290→   290→      {/* ---------- Dialogs ---------- */}
+   291→   291→      <AddLoanDialog open={showAdd} onOpenChange={setShowAdd} />
+   292→   292→
+   293→   293→      <LoanDetailSheet
+   294→   294→        loan={detailLoan}
+   295→   295→        open={!!detailLoan}
+   296→   296→        onOpenChange={(v) => { if (!v) setDetailLoan(null); }}
+   297→   297→        initialTab={detailTab}
+   298→   298→        onTabChange={setDetailTab}
+   299→   299→        onDelete={(id) => { onDelete(id); setDetailLoan(null); }}
+   300→   300→      />
+   301→   301→    </div>
+   302→   302→  );
+   303→   303→}
+   304→   304→
+   305→   305→// =====================================================
+   306→   306→//  KPI Card
+   307→   307→// =====================================================
+   308→   308→function KpiCard({
+   309→   309→  icon,
+   310→   310→  label,
+   311→   311→  value,
+   312→   312→  sub,
+   313→   313→  tone,
+   314→   314→}: {
+   315→   315→  icon: React.ReactNode;
+   316→   316→  label: string;
+   317→   317→  value: string;
+   318→   318→  sub: string;
+   319→   319→  tone: "primary" | "emerald" | "amber" | "rose" | "muted";
+   320→   320→}) {
+   321→   321→  const tones: Record<string, string> = {
+   322→   322→    primary: "bg-primary/10 text-primary",
+   323→   323→    emerald: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+   324→   324→    amber: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+   325→   325→    rose: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+   326→   326→    muted: "bg-muted text-muted-foreground",
+   327→   327→  };
+   328→   328→  return (
+   329→   329→    <Card className="p-3 sm:p-4 card-hover">
+   330→   330→      <div className="flex items-center justify-between gap-2">
+   331→   331→        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+   332→   332→        <div className={cn("grid h-7 w-7 place-items-center rounded-lg", tones[tone])}>
+   333→   333→          {icon}
+   334→   334→        </div>
+   335→   335→      </div>
+   336→   336→      <p className="mt-2 text-xl font-semibold tracking-tight tabular-nums sm:text-2xl">{value}</p>
+   337→   337→      {sub && <p className="mt-0.5 text-[11px] text-muted-foreground truncate">{sub}</p>}
+   338→   338→    </Card>
+   339→   339→  );
+   340→   340→}
+   341→   341→
+   342→   342→// =====================================================
+   343→   343→//  Loan Card (Card view)
+   344→   344→// =====================================================
+   345→   345→function LoanCard({
+   346→   346→  loan,
+   347→   347→  upcoming,
+   348→   348→  index,
+   349→   349→  onOpen,
+   350→   350→  onDelete,
+   351→   351→}: {
+   352→   352→  loan: LoanRow;
+   353→   353→  upcoming?: UpcomingEmi;
+   354→   354→  index: number;
+   355→   355→  onOpen: (tab?: "overview" | "schedule" | "documents" | "edit") => void;
+   356→   356→  onDelete: () => void;
+   357→   357→}) {
+   358→   358→  const statusTone = getStatusTone(loan.status);
+   359→   359→  const isOverdue = loan.status === "overdue";
+   360→   360→  const nextDueIn = upcoming ? daysUntil(upcoming.nextDue) : null;
+   361→   361→
+   362→   362→  // For progress: estimate from linked transactions count vs tenure
+   363→   363→  const paidCount = loan.transactions.filter(
+   364→   364→    (t) => t.type === "debit"
+   365→   365→  ).length;
+   366→   366→  const totalCount = loan.tenure ?? 0;
+   367→   367→  const pct = totalCount > 0 ? Math.min(100, Math.round((paidCount / totalCount) * 100)) : 0;
+   368→   368→
+   369→   369→  return (
+   370→   370→    <Card
+   371→   371→      className="relative flex flex-col overflow-hidden p-4 card-hover animate-fade-up cursor-pointer"
+   372→   372→      style={{ animationDelay: `${Math.min(index * 40, 240)}ms` }}
+   373→   373→      onClick={() => onOpen("overview")}
+   374→   374→    >
+   375→   375→      {/* Accent stripe by status */}
+   376→   376→      <div className={cn("absolute left-0 top-0 h-full w-1", statusTone.stripe)} />
+   377→   377→
+   378→   378→      {/* Header row */}
+   379→   379→      <div className="flex items-start justify-between gap-2">
+   380→   380→        <div className="min-w-0 flex-1">
+   381→   381→          <div className="flex items-center gap-2">
+   382→   382→            <div className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-lg", statusTone.iconBg)}>
+   383→   383→              <Landmark className="h-4 w-4" />
+   384→   384→            </div>
+   385→   385→            <div className="min-w-0">
+   386→   386→              <p className="truncate text-sm font-semibold leading-tight">{loan.lender}</p>
+   387→   387→              <p className="text-[11px] text-muted-foreground">{prettyLoanType(loan.loanType)}</p>
+   388→   388→            </div>
+   389→   389→          </div>
+   390→   390→        </div>
+   391→   391→        <Badge variant="outline" className={cn("shrink-0 text-[10px]", statusTone.badge)}>
+   392→   392→          {loan.status}
+   393→   393→        </Badge>
+   394→   394→      </div>
+   395→   395→
+   396→   396→      {/* EMI amount + next due */}
+   397→   397→      <div className="mt-3 flex items-end justify-between gap-2">
+   398→   398→        <div>
+   399→   399→          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">EMI / month</p>
+   400→   400→          <p className="text-lg font-semibold tabular-nums">
+   401→   401→            {loan.emiAmount ? formatINR(loan.emiAmount) : "—"}
+   402→   402→          </p>
+   403→   403→        </div>
+   404→   404→        {upcoming && (
+   405→   405→          <div className="text-right">
+   406→   406→            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Next due</p>
+   407→   407→            <p className={cn(
+   408→   408→              "text-xs font-medium tabular-nums",
+   409→   409→              isOverdue ? "text-rose-600 dark:text-rose-400" : nextDueIn !== null && nextDueIn <= 3 ? "text-amber-600 dark:text-amber-400" : ""
+   410→   410→            )}>
+   411→   411→              {nextDueIn === null ? "—" : nextDueIn === 0 ? "Today" : nextDueIn < 0 ? `${Math.abs(nextDueIn)}d overdue` : `in ${nextDueIn}d`}
+   412→   412→            </p>
+   413→   413→          </div>
+   414→   414→        )}
+   415→   415→      </div>
+   416→   416→
+   417→   417→      {/* Progress bar */}
+   418→   418→      {totalCount > 0 && (
+   419→   419→        <div className="mt-3 space-y-1">
+   420→   420→          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+   421→   421→            <span>Paid {paidCount} / {totalCount}</span>
+   422→   422→            <span>{pct}%</span>
+   423→   423→          </div>
+   424→   424→          <Progress value={pct} className="h-1.5" />
+   425→   425→        </div>
+   426→   426→      )}
+   427→   427→
+   428→   428→      {/* Quick stats row */}
+   429→   429→      <div className="mt-3 grid grid-cols-3 gap-1 text-[10px]">
+   430→   430→        <Stat label="Principal" value={loan.principal ? formatINRShort(loan.principal) : "—"} />
+   431→   431→        <Stat label="Tenure" value={loan.tenure ? `${loan.tenure}mo` : "—"} />
+   432→   432→        <Stat label="Due Day" value={loan.dueDay ? String(loan.dueDay) : "—"} />
+   433→   433→      </div>
+   434→   434→
+   435→   435→      {/* Action row */}
+   436→   436→      <div className="mt-3 flex items-center gap-1 border-t pt-3" onClick={(e) => e.stopPropagation()}>
+   437→   437→        <Button
+   438→   438→          variant="ghost"
+   439→   439→          size="sm"
+   440→   440→          className="h-8 flex-1 gap-1 text-xs"
+   441→   441→          onClick={() => onOpen("schedule")}
+   442→   442→        >
+   443→   443→          <CalendarClock className="h-3.5 w-3.5" />
+   444→   444→          Schedule
+   445→   445→        </Button>
+   446→   446→        <Button
+   447→   447→          variant="ghost"
+   448→   448→          size="sm"
+   449→   449→          className="h-8 flex-1 gap-1 text-xs"
+   450→   450→          onClick={() => onOpen("documents")}
+   451→   451→        >
+   452→   452→          <FileText className="h-3.5 w-3.5" />
+   453→   453→          Docs
+   454→   454→        </Button>
+   455→   455→        <Button
+   456→   456→          variant="ghost"
+   457→   457→          size="icon"
+   458→   458→          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+   459→   459→          onClick={() => onOpen("edit")}
+   460→   460→          title="Edit"
+   461→   461→        >
+   462→   462→          <Pencil className="h-3.5 w-3.5" />
+   463→   463→        </Button>
+   464→   464→        <Button
+   465→   465→          variant="ghost"
+   466→   466→          size="icon"
+   467→   467→          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+   468→   468→          onClick={onDelete}
+   469→   469→          title="Delete"
+   470→   470→        >
+   471→   471→          <Trash2 className="h-3.5 w-3.5" />
+   472→   472→        </Button>
+   473→   473→      </div>
+   474→   474→
+   475→   475→    </Card>
+   476→   476→  );
+   477→   477→}
+   478→   478→
+   479→   479→function Stat({ label, value }: { label: string; value: string }) {
+   480→   480→  return (
+   481→   481→    <div className="rounded-md bg-muted/40 px-2 py-1 text-center">
+   482→   482→      <p className="text-[9px] uppercase tracking-wide text-muted-foreground">{label}</p>
+   483→   483→      <p className="font-medium tabular-nums">{value}</p>
+   484→   484→    </div>
+   485→   485→  );
+   486→   486→}
+   487→   487→
+   488→   488→// =====================================================
+   489→   489→//  Loan List Row (List view)
+   490→   490→// =====================================================
+   491→   491→function LoanListRow({
+   492→   492→  loan,
+   493→   493→  upcoming,
+   494→   494→  onOpen,
+   495→   495→  onDelete,
+   496→   496→}: {
+   497→   497→  loan: LoanRow;
+   498→   498→  upcoming?: UpcomingEmi;
+   499→   499→  onOpen: (tab?: "overview" | "schedule" | "documents" | "edit") => void;
+   500→   500→  onDelete: () => void;
+   501→   501→}) {
+   502→   502→  const statusTone = getStatusTone(loan.status);
+   503→   503→  const nextDueIn = upcoming ? daysUntil(upcoming.nextDue) : null;
+   504→   504→  return (
+   505→   505→    <div
+   506→   506→      className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-muted/30 transition-colors"
+   507→   507→      onClick={() => onOpen("overview")}
+   508→   508→    >
+   509→   509→      <div className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", statusTone.iconBg)}>
+   510→   510→        <Landmark className="h-4 w-4" />
+   511→   511→      </div>
+   512→   512→      <div className="min-w-0 flex-1">
+   513→   513→        <div className="flex items-center gap-2">
+   514→   514→          <p className="truncate text-sm font-medium">{loan.lender}</p>
+   515→   515→          <Badge variant="outline" className={cn("shrink-0 text-[10px]", statusTone.badge)}>
+   516→   516→            {loan.status}
+   517→   517→          </Badge>
+   518→   518→        </div>
+   519→   519→        <p className="text-[11px] text-muted-foreground">
+   520→   520→          {prettyLoanType(loan.loanType)}{loan.loanRef ? ` · ${loan.loanRef}` : ""}
+   521→   521→        </p>
+   522→   522→      </div>
+   523→   523→      <div className="hidden sm:block text-right">
+   524→   524→        <p className="text-xs font-medium tabular-nums">{loan.emiAmount ? formatINR(loan.emiAmount) : "—"}</p>
+   525→   525→        <p className="text-[10px] text-muted-foreground">EMI / month</p>
+   526→   526→      </div>
+   527→   527→      <div className="hidden md:block text-right w-20">
+   528→   528→        {upcoming ? (
+   529→   529→          <>
+   530→   530→            <p className={cn(
+   531→   531→              "text-xs font-medium tabular-nums",
+   532→   532→              nextDueIn !== null && nextDueIn < 0 ? "text-rose-600 dark:text-rose-400" : nextDueIn !== null && nextDueIn <= 3 ? "text-amber-600 dark:text-amber-400" : ""
+   533→   533→            )}>
+   534→   534→              {nextDueIn === 0 ? "Today" : nextDueIn !== null && nextDueIn < 0 ? `${Math.abs(nextDueIn)}d overdue` : nextDueIn !== null ? `in ${nextDueIn}d` : "—"}
+   535→   535→            </p>
+   536→   536→            <p className="text-[10px] text-muted-foreground">Next due</p>
+   537→   537→          </>
+   538→   538→        ) : (
+   539→   539→          <span className="text-xs text-muted-foreground">—</span>
+   540→   540→        )}
+   541→   541→      </div>
+   542→   542→      <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+   543→   543→        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onOpen("schedule")} title="Schedule">
+   544→   544→          <CalendarClock className="h-3.5 w-3.5" />
+   545→   545→        </Button>
+   546→   546→        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onOpen("documents")} title="Documents">
+   547→   547→          <FileText className="h-3.5 w-3.5" />
+   548→   548→        </Button>
+   549→   549→        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onOpen("edit")} title="Edit">
+   550→   550→          <Pencil className="h-3.5 w-3.5" />
+   551→   551→        </Button>
+   552→   552→        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={onDelete} title="Delete">
+   553→   553→          <Trash2 className="h-3.5 w-3.5" />
+   554→   554→        </Button>
+   555→   555→      </div>
+   556→   556→    </div>
+   557→   557→  );
+   558→   558→}
+   559→   559→
+   560→   560→// =====================================================
+   561→   561→//  Empty State
+   562→   562→// =====================================================
+   563→   563→function EmptyState({
+   564→   564→  hasAny,
+   565→   565→  onAdd,
+   566→   566→  onUpload,
+   567→   567→}: {
+   568→   568→  hasAny: boolean;
+   569→   569→  onAdd: () => void;
+   570→   570→  onUpload?: () => void;
+   571→   571→}) {
+   572→   572→  return (
+   573→   573→    <Card className="flex flex-col items-center justify-center gap-3 p-10 text-center">
+   574→   574→      <div className="grid h-16 w-16 place-items-center rounded-2xl bg-primary/10 text-primary animate-pulse-ring">
+   575→   575→        <Landmark className="h-7 w-7" />
+   576→   576→      </div>
+   577→   577→      <div>
+   578→   578→        <p className="text-base font-semibold">
+   579→   579→          {hasAny ? "No loans match your filter" : "No loans tracked yet"}
+   580→   580→        </p>
+   581→   581→        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+   582→   582→          {hasAny
+   583→   583→            ? "Try clearing the search or switching the status filter to see more loans."
+   584→   584→            : "EMI SMS from Bajaj, HDB, Home Credit, Tata Capital and other NBFCs will auto-create loan accounts here. You can also add a loan manually or upload a loan agreement."}
+   585→   585→        </p>
+   586→   586→      </div>
+   587→   587→      <div className="flex flex-wrap items-center justify-center gap-2">
+   588→   588→        <Button onClick={onAdd} className="gap-1.5">
+   589→   589→          <Plus className="h-4 w-4" />
+   590→   590→          Add Loan Manually
+   591→   591→        </Button>
+   592→   592→        {onUpload && (
+   593→   593→          <Button variant="outline" onClick={onUpload} className="gap-1.5">
+   594→   594→            <Upload className="h-4 w-4" />
+   595→   595→            Upload Document
+   596→   596→          </Button>
+   597→   597→        )}
+   598→   598→      </div>
+   599→   599→    </Card>
+   600→   600→  );
+   601→   601→}
+   602→   602→
+   603→   603→// =====================================================
+   604→   604→//  Add Loan Dialog (with all fields + live preview)
+   605→   605→// =====================================================
+   606→   606→function AddLoanDialog({
+   607→   607→  open,
+   608→   608→  onOpenChange,
+   609→   609→}: {
+   610→   610→  open: boolean;
+   611→   611→  onOpenChange: (v: boolean) => void;
+   612→   612→}) {
+   613→   613→  const qc = useQueryClient();
+   614→   614→  const [lender, setLender] = useState("");
+   615→   615→  const [loanType, setLoanType] = useState("personal");
+   616→   616→  const [loanRef, setLoanRef] = useState("");
+   617→   617→  const [principal, setPrincipal] = useState("");
+   618→   618→  const [emiAmount, setEmiAmount] = useState("");
+   619→   619→  const [dueDay, setDueDay] = useState("");
+   620→   620→  const [tenure, setTenure] = useState("");
+   621→   621→  const [interestRate, setInterestRate] = useState("");
+   622→   622→  const [startDate, setStartDate] = useState("");
+   623→   623→  const [saving, setSaving] = useState(false);
+   624→   624→
+   625→   625→  const reset = () => {
+   626→   626→    setLender("");
+   627→   627→    setLoanType("personal");
+   628→   628→    setLoanRef("");
+   629→   629→    setPrincipal("");
+   630→   630→    setEmiAmount("");
+   631→   631→    setDueDay("");
+   632→   632→    setTenure("");
+   633→   633→    setInterestRate("");
+   634→   634→    setStartDate("");
+   635→   635→  };
+   636→   636→
+   637→   637→  const save = async () => {
+   638→   638→    if (!lender.trim()) {
+   639→   639→      toast.error("Lender name is required");
+   640→   640→      return;
+   641→   641→    }
+   642→   642→    setSaving(true);
+   643→   643→    try {
+   644→   644→      const r = await fetch("/api/loans", {
+   645→   645→        method: "POST",
+   646→   646→        headers: { "Content-Type": "application/json" },
+   647→   647→        body: JSON.stringify({
+   648→   648→          lender: lender.trim(),
+   649→   649→          loanType,
+   650→   650→          loanRef: loanRef || null,
+   651→   651→          principal: principal ? parseFloat(principal) : null,
+   652→   652→          emiAmount: emiAmount ? parseFloat(emiAmount) : null,
+   653→   653→          dueDay: dueDay ? parseInt(dueDay, 10) : null,
+   654→   654→          tenure: tenure ? parseInt(tenure, 10) : null,
+   655→   655→          interestRate: interestRate ? parseFloat(interestRate) : null,
+   656→   656→          startDate: startDate || null,
+   657→   657→          status: "active",
+   658→   658→        }),
+   659→   659→      });
+   660→   660→      if (!r.ok) throw new Error(await r.text());
+   661→   661→      toast.success("Loan added");
+   662→   662→      qc.invalidateQueries({ queryKey: ["loans"] });
+   663→   663→      qc.invalidateQueries({ queryKey: ["dashboard"] });
+   664→   664→      reset();
+   665→   665→      onOpenChange(false);
+   666→   666→    } catch (e) {
+   667→   667→      toast.error(e instanceof Error ? e.message : "Failed to add loan");
+   668→   668→    } finally {
+   669→   669→      setSaving(false);
+   670→   670→    }
+   671→   671→  };
+   672→   672→
+   673→   673→  // Live preview total payable
+   674→   674→  const previewTotal = (parseFloat(emiAmount || "0") || 0) * (parseInt(tenure || "0", 10) || 0);
+   675→   675→  const previewInterest = principal && previewTotal
+   676→   676→    ? Math.max(0, previewTotal - (parseFloat(principal) || 0))
+   677→   677→    : 0;
+   678→   678→
+   679→   679→  return (
+   680→   680→    <Dialog open={open} onOpenChange={onOpenChange}>
+   681→   681→      <DialogContent aria-describedby={undefined} className="max-w-2xl gap-0 p-0 max-h-[90vh] overflow-hidden flex flex-col">
+   682→   682→        <DialogHeader className="border-b px-6 py-4 shrink-0">
+   683→   683→          <DialogTitle className="flex items-center gap-2 text-base">
+   684→   684→            <Landmark className="h-4 w-4 text-primary" />
+   685→   685→            Add Loan / EMI
+   686→   686→          </DialogTitle>
+   687→   687→          <DialogDescription className="text-xs">
+   688→   688→            Fill in the details below. Fields marked * are required.
+   689→   689→          </DialogDescription>
+   690→   690→        </DialogHeader>
+   691→   691→
+   692→   692→        <div className="grid gap-0 overflow-y-auto scrollbar-thin md:grid-cols-5 flex-1">
+   693→   693→          {/* Form side */}
+   694→   694→          <div className="space-y-4 px-6 py-5 md:col-span-3">
+   695→   695→            <div className="space-y-1.5">
+   696→   696→              <Label className="text-xs">Lender *</Label>
+   697→   697→              <Input
+   698→   698→                value={lender}
+   699→   699→                onChange={(e) => setLender(e.target.value)}
+   700→   700→                placeholder="e.g. Bajaj Finserv, HDFC, Tata Capital"
+   701→   701→                className="h-9 text-sm"
+   702→   702→                autoFocus
+   703→   703→              />
+   704→   704→            </div>
+   705→   705→
+   706→   706→            <div className="grid grid-cols-2 gap-3">
+   707→   707→              <div className="space-y-1.5">
+   708→   708→                <Label className="text-xs">Loan Type</Label>
+   709→   709→                <Select value={loanType} onValueChange={setLoanType}>
+   710→   710→                  <SelectTrigger className="h-9">
+   711→   711→                    <SelectValue />
+   712→   712→                  </SelectTrigger>
+   713→   713→                  <SelectContent>
+   714→   714→                    <SelectItem value="personal">Personal</SelectItem>
+   715→   715→                    <SelectItem value="homeLoan">Home Loan</SelectItem>
+   716→   716→                    <SelectItem value="creditCardEMI">Card EMI</SelectItem>
+   717→   717→                    <SelectItem value="consumerDurable">Consumer Durable</SelectItem>
+   718→   718→                    <SelectItem value="autoLoan">Auto Loan</SelectItem>
+   719→   719→                    <SelectItem value="other">Other</SelectItem>
+   720→   720→                  </SelectContent>
+   721→   721→                </Select>
+   722→   722→              </div>
+   723→   723→              <div className="space-y-1.5">
+   724→   724→                <Label className="text-xs">Loan Ref / ID</Label>
+   725→   725→                <Input
+   726→   726→                  value={loanRef}
+   727→   727→                  onChange={(e) => setLoanRef(e.target.value)}
+   728→   728→                  placeholder="e.g. LNSB9981"
+   729→   729→                  className="h-9 text-sm"
+   730→   730→                />
+   731→   731→              </div>
+   732→   732→            </div>
+   733→   733→
+   734→   734→            <div className="grid grid-cols-2 gap-3">
+   735→   735→              <div className="space-y-1.5">
+   736→   736→                <Label className="text-xs">EMI Amount (₹)</Label>
+   737→   737→                <Input
+   738→   738→                  type="number"
+   739→   739→                  value={emiAmount}
+   740→   740→                  onChange={(e) => setEmiAmount(e.target.value)}
+   741→   741→                  placeholder="8500"
+   742→   742→                  className="h-9 text-sm"
+   743→   743→                />
+   744→   744→              </div>
+   745→   745→              <div className="space-y-1.5">
+   746→   746→                <Label className="text-xs">Tenure (months)</Label>
+   747→   747→                <Input
+   748→   748→                  type="number"
+   749→   749→                  value={tenure}
+   750→   750→                  onChange={(e) => setTenure(e.target.value)}
+   751→   751→                  placeholder="24"
+   752→   752→                  className="h-9 text-sm"
+   753→   753→                />
+   754→   754→              </div>
+   755→   755→            </div>
+   756→   756→
+   757→   757→            <div className="grid grid-cols-2 gap-3">
+   758→   758→              <div className="space-y-1.5">
+   759→   759→                <Label className="text-xs">Principal (₹)</Label>
+   760→   760→                <Input
+   761→   761→                  type="number"
+   762→   762→                  value={principal}
+   763→   763→                  onChange={(e) => setPrincipal(e.target.value)}
+   764→   764→                  placeholder="180000"
+   765→   765→                  className="h-9 text-sm"
+   766→   766→                />
+   767→   767→              </div>
+   768→   768→              <div className="space-y-1.5">
+   769→   769→                <Label className="text-xs">Interest Rate (% p.a.)</Label>
+   770→   770→                <Input
+   771→   771→                  type="number"
+   772→   772→                  step="0.1"
+   773→   773→                  value={interestRate}
+   774→   774→                  onChange={(e) => setInterestRate(e.target.value)}
+   775→   775→                  placeholder="14.0"
+   776→   776→                  className="h-9 text-sm"
+   777→   777→                />
+   778→   778→              </div>
+   779→   779→            </div>
+   780→   780→
+   781→   781→            <div className="grid grid-cols-2 gap-3">
+   782→   782→              <div className="space-y-1.5">
+   783→   783→                <Label className="text-xs">Due Day (1–31)</Label>
+   784→   784→                <Input
+   785→   785→                  type="number"
+   786→   786→                  min={1}
+   787→   787→                  max={31}
+   788→   788→                  value={dueDay}
+   789→   789→                  onChange={(e) => setDueDay(e.target.value)}
+   790→   790→                  placeholder="5"
+   791→   791→                  className="h-9 text-sm"
+   792→   792→                />
+   793→   793→              </div>
+   794→   794→              <div className="space-y-1.5">
+   795→   795→                <Label className="text-xs">Start Date</Label>
+   796→   796→                <Input
+   797→   797→                  type="date"
+   798→   798→                  value={startDate}
+   799→   799→                  onChange={(e) => setStartDate(e.target.value)}
+   800→   800→                  className="h-9 text-sm"
+   801→   801→                />
+   802→   802→              </div>
+   803→   803→            </div>
+   804→   804→          </div>
+   805→   805→
+   806→   806→          {/* Live preview side */}
+   807→   807→          <div className="border-t bg-muted/20 px-6 py-5 md:col-span-2 md:border-l md:border-t-0">
+   808→   808→            <p className="mb-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+   809→   809→              Live Preview
+   810→   810→            </p>
+   811→   811→            <Card className="p-4">
+   812→   812→              <div className="flex items-center gap-2">
+   813→   813→                <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary/10 text-primary">
+   814→   814→                  <Landmark className="h-4 w-4" />
+   815→   815→                </div>
+   816→   816→                <div className="min-w-0">
+   817→   817→                  <p className="truncate text-sm font-semibold">{lender || "Lender name"}</p>
+   818→   818→                  <p className="text-[11px] text-muted-foreground">{prettyLoanType(loanType)}{loanRef ? ` · ${loanRef}` : ""}</p>
+   819→   819→                </div>
+   820→   820→              </div>
+   821→   821→              <div className="mt-3">
+   822→   822→                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">EMI / month</p>
+   823→   823→                <p className="text-lg font-semibold tabular-nums">
+   824→   824→                  {emiAmount ? formatINR(parseFloat(emiAmount)) : "—"}
+   825→   825→                </p>
+   826→   826→              </div>
+   827→   827→              <div className="mt-3 space-y-1.5 border-t pt-3 text-[11px]">
+   828→   828→                <Row label="Principal" value={principal ? formatINR(parseFloat(principal)) : "—"} />
+   829→   829→                <Row label="Tenure" value={tenure ? `${tenure} months` : "—"} />
+   830→   830→                <Row label="Interest" value={interestRate ? `${interestRate}% p.a.` : "—"} />
+   831→   831→                <Row label="Due Day" value={dueDay ? `${dueDay} of month` : "—"} />
+   832→   832→                <div className="mt-2 flex items-center justify-between border-t pt-2 font-semibold">
+   833→   833→                  <span>Total Payable</span>
+   834→   834→                  <span className="tabular-nums">{previewTotal > 0 ? formatINR(previewTotal) : "—"}</span>
+   835→   835→                </div>
+   836→   836→                {previewInterest > 0 && (
+   837→   837→                  <div className="flex items-center justify-between text-amber-600 dark:text-amber-400">
+   838→   838→                    <span>Total Interest</span>
+   839→   839→                    <span className="tabular-nums">{formatINR(previewInterest)}</span>
+   840→   840→                  </div>
+   841→   841→                )}
+   842→   842→              </div>
+   843→   843→            </Card>
+   844→   844→            <p className="mt-3 text-[10px] text-muted-foreground">
+   845→   845→              <Sparkles className="mr-1 inline h-3 w-3" />
+   846→   846→              Tip: Upload a loan agreement later to auto-extract all fields and generate the full EMI schedule.
+   847→   847→            </p>
+   848→   848→          </div>
+   849→   849→        </div>
+   850→   850→
+   851→   851→        <DialogFooter className="gap-2 border-t bg-muted/20 px-6 py-3 shrink-0">
+   852→   852→          <Button variant="outline" onClick={() => onOpenChange(false)}>
+   853→   853→            Cancel
+   854→   854→          </Button>
+   855→   855→          <Button onClick={save} disabled={saving} className="gap-1.5">
+   856→   856→            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+   857→   857→            {saving ? "Saving…" : "Save Loan"}
+   858→   858→          </Button>
+   859→   859→        </DialogFooter>
+   860→   860→      </DialogContent>
+   861→   861→    </Dialog>
+   862→   862→  );
+   863→   863→}
+   864→   864→
+   865→   865→function Row({ label, value }: { label: string; value: string }) {
+   866→   866→  return (
+   867→   867→    <div className="flex items-center justify-between">
+   868→   868→      <span className="text-muted-foreground">{label}</span>
+   869→   869→      <span className="font-medium tabular-nums">{value}</span>
+   870→   870→    </div>
+   871→   871→  );
+   872→   872→}
+   873→   873→
+   874→   874→// =====================================================
+   875→   875→//  Loan Detail Sheet (with tabs)
+   876→   876→// =====================================================
+   877→   877→function LoanDetailSheet({
+   878→   878→  loan,
+   879→   879→  open,
+   880→   880→  onOpenChange,
+   881→   881→  initialTab,
+   882→   882→  onTabChange,
+   883→   883→  onDelete,
+   884→   884→}: {
+   885→   885→  loan: LoanRow | null;
+   886→   886→  open: boolean;
+   887→   887→  onOpenChange: (v: boolean) => void;
+   888→   888→  initialTab: "overview" | "schedule" | "documents" | "edit";
+   889→   889→  onTabChange: (t: "overview" | "schedule" | "documents" | "edit") => void;
+   890→   890→  onDelete: (id: string) => void;
+   891→   891→}) {
+   892→   892→  return (
+   893→   893→    <Sheet open={open} onOpenChange={onOpenChange}>
+   894→   894→      <SheetContent
+   895→   895→        side="right"
+   896→   896→        aria-describedby={undefined}
+   897→   897→        className="w-full sm:max-w-xl p-0 flex flex-col gap-0"
+   898→   898→      >
+   899→   899→        <SheetHeader className="border-b px-5 py-4 shrink-0">
+   900→   900→          <SheetTitle className="flex items-center gap-2 text-base">
+   901→   901→            <Landmark className="h-4 w-4 text-primary" />
+   902→   902→            {loan?.lender ?? "Loan Details"}
+   903→   903→          </SheetTitle>
+   904→   904→          <SheetDescription className="text-xs">
+   905→   905→            {loan ? `${prettyLoanType(loan.loanType)}${loan.loanRef ? ` · Ref: ${loan.loanRef}` : ""}` : ""}
+   906→   906→          </SheetDescription>
+   907→   907→        </SheetHeader>
+   908→   908→
+   909→   909→        {loan && (
+   910→   910→          <Tabs
+   911→   911→            value={initialTab}
+   912→   912→            onValueChange={(v) => onTabChange(v as typeof initialTab)}
+   913→   913→            className="flex flex-1 flex-col gap-0 overflow-hidden"
+   914→   914→          >
+   915→   915→            <div className="border-b px-3 py-2 shrink-0">
+   916→   916→              <TabsList className="grid h-9 w-full grid-cols-4">
+   917→   917→                <TabsTrigger value="overview" className="text-xs">Overview</TabsTrigger>
+   918→   918→                <TabsTrigger value="schedule" className="text-xs">Schedule</TabsTrigger>
+   919→   919→                <TabsTrigger value="documents" className="text-xs">Documents</TabsTrigger>
+   920→   920→                <TabsTrigger value="edit" className="text-xs">Edit</TabsTrigger>
+   921→   921→              </TabsList>
+   922→   922→            </div>
+   923→   923→
+   924→   924→            <TabsContent value="overview" className="flex-1 overflow-y-auto scrollbar-thin">
+   925→   925→              <OverviewTab loan={loan} />
+   926→   926→            </TabsContent>
+   927→   927→            <TabsContent value="schedule" className="flex-1 overflow-y-auto scrollbar-thin">
+   928→   928→              <ScheduleTab loanId={loan.id} />
+   929→   929→            </TabsContent>
+   930→   930→            <TabsContent value="documents" className="flex-1 overflow-y-auto scrollbar-thin">
+   931→   931→              <DocumentsTab loanId={loan.id} />
+   932→   932→            </TabsContent>
+   933→   933→            <TabsContent value="edit" className="flex-1 overflow-y-auto scrollbar-thin">
+   934→   934→              <EditTab loan={loan} onDelete={() => onDelete(loan.id)} />
+   935→   935→            </TabsContent>
+   936→   936→          </Tabs>
+   937→   937→        )}
+   938→   938→      </SheetContent>
+   939→   939→    </Sheet>
+   940→   940→  );
+   941→   941→}
+   942→   942→
+   943→   943→// =====================================================
+   944→   944→//  Overview Tab
+   945→   945→// =====================================================
+   946→   946→function OverviewTab({ loan }: { loan: LoanRow }) {
+   947→   947→  const statusTone = getStatusTone(loan.status);
+   948→   948→  const paidDebits = loan.transactions.filter((t) => t.type === "debit");
+   949→   949→  const totalPaid = paidDebits.reduce((s, t) => s + t.amount, 0);
+   950→   950→  const pct = loan.tenure ? Math.min(100, Math.round((paidDebits.length / loan.tenure) * 100)) : 0;
+   951→   951→
+   952→   952→  return (
+   953→   953→    <div className="space-y-4 p-5">
+   954→   954→      {/* Status hero */}
+   955→   955→      <Card className={cn("p-4", statusTone.heroBg)}>
+   956→   956→        <div className="flex items-center justify-between">
+   957→   957→          <div>
+   958→   958→            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Status</p>
+   959→   959→            <p className={cn("text-lg font-semibold capitalize", statusTone.heroText)}>{loan.status}</p>
+   960→   960→          </div>
+   961→   961→          <div className={cn("grid h-12 w-12 place-items-center rounded-full", statusTone.iconBg)}>
+   962→   962→            {loan.status === "overdue" ? <AlertTriangle className="h-5 w-5" /> :
+   963→   963→             loan.status === "closed" ? <CheckCircle className="h-5 w-5" /> :
+   964→   964→             <Clock className="h-5 w-5" />}
+   965→   965→          </div>
+   966→   966→        </div>
+   967→   967→      </Card>
+   968→   968→
+   969→   969→      {/* EMI hero */}
+   970→   970→      <Card className="p-4">
+   971→   971→        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">EMI Amount</p>
+   972→   972→        <p className="text-3xl font-bold tabular-nums">{loan.emiAmount ? formatINR(loan.emiAmount) : "Not set"}</p>
+   973→   973→        {loan.dueDay && (
+   974→   974→          <p className="mt-1 text-xs text-muted-foreground">
+   975→   975→            Due on day <span className="font-semibold text-foreground">{loan.dueDay}</span> of every month
+   976→   976→          </p>
+   977→   977→        )}
+   978→   978→      </Card>
+   979→   979→
+   980→   980→      {/* Progress */}
+   981→   981→      {loan.tenure ? (
+   982→   982→        <Card className="p-4">
+   983→   983→          <div className="mb-2 flex items-center justify-between">
+   984→   984→            <p className="text-xs font-medium">Repayment Progress</p>
+   985→   985→            <p className="text-xs text-muted-foreground tabular-nums">{paidDebits.length} / {loan.tenure} EMIs</p>
+   986→   986→          </div>
+   987→   987→          <Progress value={pct} className="h-2" />
+   988→   988→          <div className="mt-2 grid grid-cols-3 gap-2 text-center text-[11px]">
+   989→   989→            <div>
+   990→   990→              <p className="font-semibold tabular-nums">{pct}%</p>
+   991→   991→              <p className="text-muted-foreground">Complete</p>
+   992→   992→            </div>
+   993→   993→            <div>
+   994→   994→              <p className="font-semibold tabular-nums">{formatINRShort(totalPaid)}</p>
+   995→   995→              <p className="text-muted-foreground">Paid</p>
+   996→   996→            </div>
+   997→   997→            <div>
+   998→   998→              <p className="font-semibold tabular-nums">{loan.tenure - paidDebits.length}</p>
+   999→   999→              <p className="text-muted-foreground">Remaining</p>
+  1000→  1000→            </div>
+  1001→  1001→          </div>
+  1002→  1002→        </Card>
+  1003→  1003→      ) : null}
+  1004→  1004→
+  1005→  1005→      {/* Loan details grid */}
+  1006→  1006→      <Card className="p-4">
+  1007→  1007→        <p className="mb-3 text-xs font-medium">Loan Details</p>
+  1008→  1008→        <div className="grid grid-cols-2 gap-3 text-sm">
+  1009→  1009→          <DetailItem label="Loan Type" value={prettyLoanType(loan.loanType)} />
+  1010→  1010→          <DetailItem label="Loan Reference" value={loan.loanRef ?? "—"} />
+  1011→  1011→          <DetailItem label="Principal" value={loan.principal ? formatINR(loan.principal) : "—"} />
+  1012→  1012→          <DetailItem label="Interest Rate" value={loan.interestRate ? `${loan.interestRate}% p.a.` : "—"} />
+  1013→  1013→          <DetailItem label="Tenure" value={loan.tenure ? `${loan.tenure} months` : "—"} />
+  1014→  1014→          <DetailItem label="Start Date" value={loan.startDate ? formatDate(loan.startDate).split(",")[0] : "—"} />
+  1015→  1015→        </div>
+  1016→  1016→      </Card>
+  1017→  1017→
+  1018→  1018→      {/* Recent transactions */}
+  1019→  1019→      <Card className="p-4">
+  1020→  1020→        <p className="mb-3 text-xs font-medium">Linked EMI Transactions ({loan.transactions.length})</p>
+  1021→  1021→        {loan.transactions.length === 0 ? (
+  1022→  1022→          <p className="text-xs text-muted-foreground">No EMI payments detected yet. They will appear here when EMI debit SMS are received.</p>
+  1023→  1023→        ) : (
+  1024→  1024→          <ul className="space-y-1.5">
+  1025→  1025→            {loan.transactions.slice(0, 5).map((t) => (
+  1026→  1026→              <li key={t.id} className="flex items-center justify-between rounded-md bg-muted/30 px-3 py-2 text-xs">
+  1027→  1027→                <div className="min-w-0">
+  1028→  1028→                  <p className="truncate font-medium">{t.merchant ?? t.bank ?? "EMI Payment"}</p>
+  1029→  1029→                  <p className="text-[10px] text-muted-foreground">{formatDate(t.txDate)}</p>
+  1030→  1030→                </div>
+  1031→  1031→                <span className="font-semibold tabular-nums">{formatINR(t.amount)}</span>
+  1032→  1032→              </li>
+  1033→  1033→            ))}
+  1034→  1034→            {loan.transactions.length > 5 && (
+  1035→  1035→              <p className="pt-1 text-center text-[10px] text-muted-foreground">
+  1036→  1036→                + {loan.transactions.length - 5} more
+  1037→  1037→              </p>
+  1038→  1038→            )}
+  1039→  1039→          </ul>
+  1040→  1040→        )}
+  1041→  1041→      </Card>
+  1042→  1042→    </div>
+  1043→  1043→  );
+  1044→  1044→}
+  1045→  1045→
+  1046→  1046→function DetailItem({ label, value }: { label: string; value: string }) {
+  1047→  1047→  return (
+  1048→  1048→    <div className="space-y-0.5">
+  1049→  1049→      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</p>
+  1050→  1050→      <p className="font-medium tabular-nums truncate">{value}</p>
+  1051→  1051→    </div>
+  1052→  1052→  );
+  1053→  1053→}
+  1054→  1054→
+  1055→  1055→// =====================================================
+  1056→  1056→//  Schedule Tab
+  1057→  1057→// =====================================================
+  1058→  1058→function ScheduleTab({ loanId }: { loanId: string }) {
+  1059→  1059→  const scheduleQ = useLoanSchedule(loanId);
+  1060→  1060→
+  1061→  1061→  if (scheduleQ.isLoading) {
+  1062→  1062→    return (
+  1063→  1063→      <div className="space-y-2 p-5">
+  1064→  1064→        {Array.from({ length: 5 }).map((_, i) => (
+  1065→  1065→          <div key={i} className="h-10 rounded-lg shimmer" />
+  1066→  1066→        ))}
+  1067→  1067→      </div>
+  1068→  1068→    );
+  1069→  1069→  }
+  1070→  1070→
+  1071→  1071→  if (!scheduleQ.data || scheduleQ.data.schedule.length === 0) {
+  1072→  1072→    return (
+  1073→  1073→      <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+  1074→  1074→        <div className="grid h-14 w-14 place-items-center rounded-full bg-muted">
+  1075→  1075→          <CalendarClock className="h-6 w-6 text-muted-foreground" />
+  1076→  1076→        </div>
+  1077→  1077→        <div>
+  1078→  1078→          <p className="text-sm font-medium">No schedule available</p>
+  1079→  1079→          <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+  1080→  1080→            Upload a loan agreement or EMI schedule document, or set the EMI amount, tenure, and due day to auto-generate the schedule.
+  1081→  1081→          </p>
+  1082→  1082→        </div>
+  1083→  1083→      </div>
+  1084→  1084→    );
+  1085→  1085→  }
+  1086→  1086→
+  1087→  1087→  const d = scheduleQ.data;
+  1088→  1088→
+  1089→  1089→  return (
+  1090→  1090→    <div className="space-y-4 p-5">
+  1091→  1091→      {/* Summary cards */}
+  1092→  1092→      <div className="grid grid-cols-3 gap-2">
+  1093→  1093→        <SummaryTile label="Paid" value={d.paid} icon={<CheckCircle className="h-3.5 w-3.5" />} tone="emerald" />
+  1094→  1094→        <SummaryTile label="Upcoming" value={d.upcoming} icon={<Clock className="h-3.5 w-3.5" />} tone="sky" />
+  1095→  1095→        <SummaryTile label="Overdue" value={d.overdue} icon={<AlertTriangle className="h-3.5 w-3.5" />} tone="rose" />
+  1096→  1096→      </div>
+  1097→  1097→
+  1098→  1098→      {/* Total payable */}
+  1099→  1099→      {d.totalPayable ? (
+  1100→  1100→        <Card className="p-3">
+  1101→  1101→          <div className="flex items-center justify-between text-xs">
+  1102→  1102→            <div>
+  1103→  1103→              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Total Payable</p>
+  1104→  1104→              <p className="text-base font-semibold tabular-nums">{formatINR(d.totalPayable)}</p>
+  1105→  1105→            </div>
+  1106→  1106→            {d.totalInterest ? (
+  1107→  1107→              <div className="text-right">
+  1108→  1108→                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Total Interest</p>
+  1109→  1109→                <p className="text-base font-semibold text-amber-600 dark:text-amber-400 tabular-nums">{formatINR(d.totalInterest)}</p>
+  1110→  1110→              </div>
+  1111→  1111→            ) : null}
+  1112→  1112→          </div>
+  1113→  1113→        </Card>
+  1114→  1114→      ) : null}
+  1115→  1115→
+  1116→  1116→      {/* Schedule list */}
+  1117→  1117→      <div className="space-y-1">
+  1118→  1118→        <p className="text-xs font-medium text-muted-foreground">All Installments</p>
+  1119→  1119→        {d.schedule.map((emi) => (
+  1120→  1120→          <ScheduleRow key={emi.installmentNumber} emi={emi} />
+  1121→  1121→        ))}
+  1122→  1122→      </div>
+  1123→  1123→    </div>
+  1124→  1124→  );
+  1125→  1125→}
+  1126→  1126→
+  1127→  1127→function SummaryTile({
+  1128→  1128→  label,
+  1129→  1129→  value,
+  1130→  1130→  icon,
+  1131→  1131→  tone,
+  1132→  1132→}: {
+  1133→  1133→  label: string;
+  1134→  1134→  value: number;
+  1135→  1135→  icon: React.ReactNode;
+  1136→  1136→  tone: "emerald" | "sky" | "rose";
+  1137→  1137→}) {
+  1138→  1138→  const tones = {
+  1139→  1139→    emerald: "bg-emerald-500/5 text-emerald-600 dark:text-emerald-400",
+  1140→  1140→    sky: "bg-sky-500/5 text-sky-600 dark:text-sky-400",
+  1141→  1141→    rose: "bg-rose-500/5 text-rose-600 dark:text-rose-400",
+  1142→  1142→  };
+  1143→  1143→  return (
+  1144→  1144→    <Card className={cn("p-3 text-center", tones[tone])}>
+  1145→  1145→      <div className="mx-auto mb-1 grid h-6 w-6 place-items-center rounded-full bg-background/60">{icon}</div>
+  1146→  1146→      <p className="text-xl font-semibold tabular-nums">{value}</p>
+  1147→  1147→      <p className="text-[10px] text-muted-foreground">{label}</p>
+  1148→  1148→    </Card>
+  1149→  1149→  );
+  1150→  1150→}
+  1151→  1151→
+  1152→  1152→function ScheduleRow({
+  1153→  1153→  emi,
+  1154→  1154→}: {
+  1155→  1155→  emi: {
+  1156→  1156→    installmentNumber: number;
+  1157→  1157→    dueDate: string;
+  1158→  1158→    amount: number;
+  1159→  1159→    status: "upcoming" | "paid" | "overdue";
+  1160→  1160→    linkedTransactionId?: string;
+  1161→  1161→  };
+  1162→  1162→}) {
+  1163→  1163→  const tone =
+  1164→  1164→    emi.status === "paid"
+  1165→  1165→      ? { icon: <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />, badge: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" }
+  1166→  1166→      : emi.status === "overdue"
+  1167→  1167→      ? { icon: <AlertTriangle className="h-3.5 w-3.5 text-rose-500" />, badge: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300" }
+  1168→  1168→      : { icon: <Clock className="h-3.5 w-3.5 text-sky-500" />, badge: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300" };
+  1169→  1169→
+  1170→  1170→  const d = new Date(emi.dueDate);
+  1171→  1171→  const dateStr = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  1172→  1172→
+  1173→  1173→  return (
+  1174→  1174→    <div className="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs hover:bg-muted/30 transition-colors">
+  1175→  1175→      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-muted text-[10px] font-semibold">
+  1176→  1176→        {emi.installmentNumber}
+  1177→  1177→      </span>
+  1178→  1178→      {tone.icon}
+  1179→  1179→      <span className="min-w-0 flex-1 text-muted-foreground">{dateStr}</span>
+  1180→  1180→      <span className="shrink-0 font-medium tabular-nums">{formatINR(emi.amount)}</span>
+  1181→  1181→      <Badge variant="outline" className={cn("shrink-0 text-[9px] capitalize", tone.badge)}>{emi.status}</Badge>
+  1182→  1182→    </div>
+  1183→  1183→  );
+  1184→  1184→}
+  1185→  1185→
+  1186→  1186→// =====================================================
+  1187→  1187→//  Documents Tab (Vault access)
+  1188→  1188→// =====================================================
+  1189→  1189→function DocumentsTab({ loanId }: { loanId: string }) {
+  1190→  1190→  const [docs, setDocs] = useState<Array<{
+  1191→  1191→    id: string;
+  1192→  1192→    fileName: string;
+  1193→  1193→    documentType: string;
+  1194→  1194→    extractionStatus: string;
+  1195→  1195→    uploadedAt: string;
+  1196→  1196→  }>>([]);
+  1197→  1197→  const [loading, setLoading] = useState(true);
+  1198→  1198→  const [unlocked, setUnlocked] = useState(false);
+  1199→  1199→  const [selectedDoc, setSelectedDoc] = useState<{ id: string; content: string; fileName: string } | null>(null);
+  1200→  1200→
+  1201→  1201→  useEffect(() => {
+  1202→  1202→    setLoading(true);
+  1203→  1203→    fetch(`/api/documents`)
+  1204→  1204→      .then((r) => r.json())
+  1205→  1205→      .then((data) => {
+  1206→  1206→        const loanDocs = (data.documents || []).filter((d: { linkedLoanId: string | null }) => d.linkedLoanId === loanId);
+  1207→  1207→        setDocs(loanDocs);
+  1208→  1208→        setLoading(false);
+  1209→  1209→      })
+  1210→  1210→      .catch(() => setLoading(false));
+  1211→  1211→  }, [loanId]);
+  1212→  1212→
+  1213→  1213→  const viewDocument = async (docId: string, fileName: string) => {
+  1214→  1214→    try {
+  1215→  1215→      const r = await fetch(`/api/documents/${docId}/vault`);
+  1216→  1216→      if (!r.ok) throw new Error("Access denied");
+  1217→  1217→      const data = await r.json();
+  1218→  1218→      setSelectedDoc({ id: docId, content: data.vault?.content || "Content not available", fileName });
+  1219→  1219→    } catch (e) {
+  1220→  1220→      toast.error(e instanceof Error ? e.message : "Failed to access vault");
+  1221→  1221→    }
+  1222→  1222→  };
+  1223→  1223→
+  1224→  1224→  if (!unlocked) {
+  1225→  1225→    return (
+  1226→  1226→      <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+  1227→  1227→        <div className="grid h-14 w-14 place-items-center rounded-full bg-primary/10 text-primary">
+  1228→  1228→          <Shield className="h-6 w-6" />
+  1229→  1229→        </div>
+  1230→  1230→        <div>
+  1231→  1231→          <p className="text-sm font-medium">Documents are secured</p>
+  1232→  1232→          <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+  1233→  1233→            Authenticate to view original loan agreements and EMI schedules stored in the encrypted vault.
+  1234→  1234→          </p>
+  1235→  1235→        </div>
+  1236→  1236→        <Button onClick={() => setUnlocked(true)} className="gap-1.5">
+  1237→  1237→          <Shield className="h-4 w-4" />
+  1238→  1238→          Unlock & View
+  1239→  1239→        </Button>
+  1240→  1240→      </div>
+  1241→  1241→    );
+  1242→  1242→  }
+  1243→  1243→
+  1244→  1244→  if (loading) {
+  1245→  1245→    return (
+  1246→  1246→      <div className="flex items-center justify-center p-8">
+  1247→  1247→        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+  1248→  1248→      </div>
+  1249→  1249→    );
+  1250→  1250→  }
+  1251→  1251→
+  1252→  1252→  if (selectedDoc) {
+  1253→  1253→    return (
+  1254→  1254→      <div className="space-y-3 p-5">
+  1255→  1255→        <Button variant="ghost" size="sm" onClick={() => setSelectedDoc(null)} className="gap-1.5">
+  1256→  1256→          ← Back to list
+  1257→  1257→        </Button>
+  1258→  1258→        <p className="text-xs font-semibold">{selectedDoc.fileName}</p>
+  1259→  1259→        <pre className="max-h-80 overflow-auto rounded-lg border bg-muted/20 p-3 text-[10px] leading-relaxed whitespace-pre-wrap scrollbar-thin">
+  1260→  1260→          {selectedDoc.content}
+  1261→  1261→        </pre>
+  1262→  1262→      </div>
+  1263→  1263→    );
+  1264→  1264→  }
+  1265→  1265→
+  1266→  1266→  if (docs.length === 0) {
+  1267→  1267→    return (
+  1268→  1268→      <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+  1269→  1269→        <div className="grid h-12 w-12 place-items-center rounded-full bg-muted">
+  1270→  1270→          <FileText className="h-5 w-5 text-muted-foreground" />
+  1271→  1271→        </div>
+  1272→  1272→        <div>
+  1273→  1273→          <p className="text-sm font-medium">No documents linked</p>
+  1274→  1274→          <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+  1275→  1275→            Upload a loan agreement or EMI schedule from the Documents view to see it here.
+  1276→  1276→          </p>
+  1277→  1277→        </div>
+  1278→  1278→      </div>
+  1279→  1279→    );
+  1280→  1280→  }
+  1281→  1281→
+  1282→  1282→  return (
+  1283→  1283→    <div className="space-y-2 p-5">
+  1284→  1284→      <p className="text-xs font-medium text-muted-foreground">{docs.length} document(s) linked to this loan</p>
+  1285→  1285→      <ul className="space-y-2">
+  1286→  1286→        {docs.map((d) => (
+  1287→  1287→          <li key={d.id}>
+  1288→  1288→            <button
+  1289→  1289→              onClick={() => viewDocument(d.id, d.fileName)}
+  1290→  1290→              className="flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/30"
+  1291→  1291→            >
+  1292→  1292→              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+  1293→  1293→                <FileText className="h-4 w-4" />
+  1294→  1294→              </div>
+  1295→  1295→              <div className="min-w-0 flex-1">
+  1296→  1296→                <p className="truncate text-xs font-medium">{d.fileName}</p>
+  1297→  1297→                <p className="text-[10px] text-muted-foreground">
+  1298→  1298→                  {d.documentType.replace(/([A-Z])/g, " $1").trim()} · {new Date(d.uploadedAt).toLocaleDateString("en-IN")}
+  1299→  1299→                </p>
+  1300→  1300→              </div>
+  1301→  1301→              <Badge variant="outline" className="shrink-0 text-[9px]">{d.extractionStatus}</Badge>
+  1302→  1302→            </button>
+  1303→  1303→          </li>
+  1304→  1304→        ))}
+  1305→  1305→      </ul>
+  1306→  1306→    </div>
+  1307→  1307→  );
+  1308→  1308→}
+  1309→  1309→
+  1310→  1310→// =====================================================
+  1311→  1311→//  Edit Tab
+  1312→  1312→// =====================================================
+  1313→  1313→function EditTab({
+  1314→  1314→  loan,
+  1315→  1315→  onDelete,
+  1316→  1316→}: {
+  1317→  1317→  loan: LoanRow;
+  1318→  1318→  onDelete: () => void;
+  1319→  1319→}) {
+  1320→  1320→  const updateMut = useUpdateLoan();
+  1321→  1321→  const [lender, setLender] = useState(loan.lender);
+  1322→  1322→  const [loanType, setLoanType] = useState(loan.loanType);
+  1323→  1323→  const [loanRef, setLoanRef] = useState(loan.loanRef ?? "");
+  1324→  1324→  const [principal, setPrincipal] = useState(loan.principal ? String(loan.principal) : "");
+  1325→  1325→  const [emiAmount, setEmiAmount] = useState(loan.emiAmount ? String(loan.emiAmount) : "");
+  1326→  1326→  const [dueDay, setDueDay] = useState(loan.dueDay ? String(loan.dueDay) : "");
+  1327→  1327→  const [tenure, setTenure] = useState(loan.tenure ? String(loan.tenure) : "");
+  1328→  1328→  const [interestRate, setInterestRate] = useState(loan.interestRate ? String(loan.interestRate) : "");
+  1329→  1329→  const [startDate, setStartDate] = useState(loan.startDate ? loan.startDate.split("T")[0] : "");
+  1330→  1330→  const [status, setStatus] = useState(loan.status);
+  1331→  1331→
+  1332→  1332→  const save = async () => {
+  1333→  1333→    if (!lender.trim()) {
+  1334→  1334→      toast.error("Lender name is required");
+  1335→  1335→      return;
+  1336→  1336→    }
+  1337→  1337→    try {
+  1338→  1338→      await updateMut.mutateAsync({
+  1339→  1339→        id: loan.id,
+  1340→  1340→        patch: {
+  1341→  1341→          lender: lender.trim(),
+  1342→  1342→          loanType,
+  1343→  1343→          loanRef: loanRef || null,
+  1344→  1344→          principal: principal ? parseFloat(principal) : null,
+  1345→  1345→          emiAmount: emiAmount ? parseFloat(emiAmount) : null,
+  1346→  1346→          dueDay: dueDay ? parseInt(dueDay, 10) : null,
+  1347→  1347→          tenure: tenure ? parseInt(tenure, 10) : null,
+  1348→  1348→          interestRate: interestRate ? parseFloat(interestRate) : null,
+  1349→  1349→          startDate: startDate || null,
+  1350→  1350→          status,
+  1351→  1351→        },
+  1352→  1352→      });
+  1353→  1353→      toast.success("Loan updated");
+  1354→  1354→    } catch (e) {
+  1355→  1355→      toast.error(e instanceof Error ? e.message : "Update failed");
+  1356→  1356→    }
+  1357→  1357→  };
+  1358→  1358→
+  1359→  1359→  return (
+  1360→  1360→    <div className="space-y-4 p-5">
+  1361→  1361→      <div className="space-y-1.5">
+  1362→  1362→        <Label className="text-xs">Lender *</Label>
+  1363→  1363→        <Input value={lender} onChange={(e) => setLender(e.target.value)} className="h-9 text-sm" />
+  1364→  1364→      </div>
+  1365→  1365→
+  1366→  1366→      <div className="grid grid-cols-2 gap-3">
+  1367→  1367→        <div className="space-y-1.5">
+  1368→  1368→          <Label className="text-xs">Loan Type</Label>
+  1369→  1369→          <Select value={loanType} onValueChange={setLoanType}>
+  1370→  1370→            <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+  1371→  1371→            <SelectContent>
+  1372→  1372→              <SelectItem value="personal">Personal</SelectItem>
+  1373→  1373→              <SelectItem value="homeLoan">Home Loan</SelectItem>
+  1374→  1374→              <SelectItem value="creditCardEMI">Card EMI</SelectItem>
+  1375→  1375→              <SelectItem value="consumerDurable">Consumer Durable</SelectItem>
+  1376→  1376→              <SelectItem value="autoLoan">Auto Loan</SelectItem>
+  1377→  1377→              <SelectItem value="other">Other</SelectItem>
+  1378→  1378→            </SelectContent>
+  1379→  1379→          </Select>
+  1380→  1380→        </div>
+  1381→  1381→        <div className="space-y-1.5">
+  1382→  1382→          <Label className="text-xs">Status</Label>
+  1383→  1383→          <Select value={status} onValueChange={setStatus}>
+  1384→  1384→            <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+  1385→  1385→            <SelectContent>
+  1386→  1386→              <SelectItem value="active">Active</SelectItem>
+  1387→  1387→              <SelectItem value="overdue">Overdue</SelectItem>
+  1388→  1388→              <SelectItem value="closed">Closed</SelectItem>
+  1389→  1389→            </SelectContent>
+  1390→  1390→          </Select>
+  1391→  1391→        </div>
+  1392→  1392→      </div>
+  1393→  1393→
+  1394→  1394→      <div className="grid grid-cols-2 gap-3">
+  1395→  1395→        <div className="space-y-1.5">
+  1396→  1396→          <Label className="text-xs">Loan Ref</Label>
+  1397→  1397→          <Input value={loanRef} onChange={(e) => setLoanRef(e.target.value)} className="h-9 text-sm" />
+  1398→  1398→        </div>
+  1399→  1399→        <div className="space-y-1.5">
+  1400→  1400→          <Label className="text-xs">EMI Amount</Label>
+  1401→  1401→          <Input type="number" value={emiAmount} onChange={(e) => setEmiAmount(e.target.value)} className="h-9 text-sm" />
+  1402→  1402→        </div>
+  1403→  1403→      </div>
+  1404→  1404→
+  1405→  1405→      <div className="grid grid-cols-2 gap-3">
+  1406→  1406→        <div className="space-y-1.5">
+  1407→  1407→          <Label className="text-xs">Principal</Label>
+  1408→  1408→          <Input type="number" value={principal} onChange={(e) => setPrincipal(e.target.value)} className="h-9 text-sm" />
+  1409→  1409→        </div>
+  1410→  1410→        <div className="space-y-1.5">
+  1411→  1411→          <Label className="text-xs">Interest Rate (%)</Label>
+  1412→  1412→          <Input type="number" step="0.1" value={interestRate} onChange={(e) => setInterestRate(e.target.value)} className="h-9 text-sm" />
+  1413→  1413→        </div>
+  1414→  1414→      </div>
+  1415→  1415→
+  1416→  1416→      <div className="grid grid-cols-2 gap-3">
+  1417→  1417→        <div className="space-y-1.5">
+  1418→  1418→          <Label className="text-xs">Tenure (months)</Label>
+  1419→  1419→          <Input type="number" value={tenure} onChange={(e) => setTenure(e.target.value)} className="h-9 text-sm" />
+  1420→  1420→        </div>
+  1421→  1421→        <div className="space-y-1.5">
+  1422→  1422→          <Label className="text-xs">Due Day (1–31)</Label>
+  1423→  1423→          <Input type="number" min={1} max={31} value={dueDay} onChange={(e) => setDueDay(e.target.value)} className="h-9 text-sm" />
+  1424→  1424→        </div>
+  1425→  1425→      </div>
+  1426→  1426→
+  1427→  1427→      <div className="space-y-1.5">
+  1428→  1428→        <Label className="text-xs">Start Date</Label>
+  1429→  1429→        <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-9 text-sm" />
+  1430→  1430→      </div>
+  1431→  1431→
+  1432→  1432→      <div className="flex items-center justify-between gap-2 border-t pt-4">
+  1433→  1433→        <Button variant="outline" onClick={onDelete} className="gap-1.5 text-destructive hover:text-destructive">
+  1434→  1434→          <Trash2 className="h-3.5 w-3.5" />
+  1435→  1435→          Delete Loan
+  1436→  1436→        </Button>
+  1437→  1437→        <Button onClick={save} disabled={updateMut.isPending} className="gap-1.5">
+  1438→  1438→          {updateMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+  1439→  1439→          Save Changes
+  1440→  1440→        </Button>
+  1441→  1441→      </div>
+  1442→  1442→    </div>
+  1443→  1443→  );
+  1444→  1444→}
+  1445→  1445→
+  1446→  1446→// =====================================================
+  1447→  1447→//  Helpers
+  1448→  1448→// =====================================================
+  1449→  1449→function prettyLoanType(t: string): string {
+  1450→  1450→  const map: Record<string, string> = {
+  1451→  1451→    personal: "Personal Loan",
+  1452→  1452→    homeLoan: "Home Loan",
+  1453→  1453→    creditCardEMI: "Card EMI",
+  1454→  1454→    consumerDurable: "Consumer Durable",
+  1455→  1455→    autoLoan: "Auto Loan",
+  1456→  1456→    other: "Other",
+  1457→  1457→  };
+  1458→  1458→  return map[t] ?? t;
+  1459→  1459→}
+  1460→  1460→
+  1461→  1461→function getStatusTone(status: string) {
+  1462→  1462→  switch (status) {
+  1463→  1463→    case "overdue":
+  1464→  1464→      return {
+  1465→  1465→        stripe: "bg-rose-500",
+  1466→  1466→        iconBg: "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  1467→  1467→        badge: "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+  1468→  1468→        heroBg: "bg-rose-500/5",
+  1469→  1469→        heroText: "text-rose-600 dark:text-rose-400",
+  1470→  1470→      };
+  1471→  1471→    case "closed":
+  1472→  1472→      return {
+  1473→  1473→        stripe: "bg-muted-foreground/40",
+  1474→  1474→        iconBg: "bg-muted text-muted-foreground",
+  1475→  1475→        badge: "border-muted-foreground/30 bg-muted text-muted-foreground",
+  1476→  1476→        heroBg: "bg-muted/30",
+  1477→  1477→        heroText: "text-muted-foreground",
+  1478→  1478→      };
+  1479→  1479→    default:
+  1480→  1480→      return {
+  1481→  1481→        stripe: "bg-emerald-500",
+  1482→  1482→        iconBg: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  1483→  1483→        badge: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  1484→  1484→        heroBg: "bg-emerald-500/5",
+  1485→  1485→        heroText: "text-emerald-600 dark:text-emerald-400",
+  1486→  1486→      };
+  1487→  1487→  }
+  1488→  1488→}
+  1489→  1489→
+  1490→  1490→function daysUntil(date: string | Date): number {
+  1491→  1491→  const d = typeof date === "string" ? new Date(date) : date;
+  1492→  1492→  const now = new Date();
+  1493→  1493→  now.setHours(0, 0, 0, 0);
+  1494→  1494→  d.setHours(0, 0, 0, 0);
+  1495→  1495→  return Math.round((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  1496→  1496→}
+  1497→  1497→
+  1498→  1498→function formatNextDue(date: string | Date): string {
+  1499→  1499→  const d = typeof date === "string" ? new Date(date) : date;
+  1500→  1500→  const days = daysUntil(d);
+  1501→  1501→  if (days === 0) return "Today";
+  1502→  1502→  if (days < 0) return `${Math.abs(days)}d overdue`;
+  1503→  1503→  if (days === 1) return "Tomorrow";
+  1504→  1504→  if (days < 7) return `in ${days}d`;
+  1505→  1505→  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  1506→  1506→}
+  1507→  1507→

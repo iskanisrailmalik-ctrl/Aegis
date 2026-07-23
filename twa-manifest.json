@@ -1,0 +1,32 @@
+{
+  "packageId": "com.aegis.sms.web",
+  "host": "aegis.app",
+  "name": "Aegis — SMS Finance Tracker",
+  "launcherName": "Aegis",
+  "display": "standalone",
+  "themeColor": "#0D9488",
+  "navigationColor": "#090D16",
+  "backgroundColor": "#090D16",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://aegis.app/icons/icon-512.png",
+  "maskableIconUrl": "https://aegis.app/icons/icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./aegis-release-key.jks",
+    "alias": "aegis-key"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "shortName": "Dashboard",
+      "url": "https://aegis.app/",
+      "chosenIcon": "public/icons/icon-192.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://aegis.app/manifest.json",
+  "fallbackType": "customtabs text/html"
+}

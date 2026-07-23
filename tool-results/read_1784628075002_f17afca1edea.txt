@@ -1,0 +1,693 @@
+     1→"use client";
+     2→
+     3→import { useState, useMemo, useRef, useEffect } from "react";
+     4→import { Button } from "@/components/ui/button";
+     5→import { Input } from "@/components/ui/input";
+     6→import {
+     7→  Dialog,
+     8→  DialogContent,
+     9→  DialogTitle,
+    10→} from "@/components/ui/dialog";
+    11→import {
+    12→  Search,
+    13→  Building2,
+    14→  Landmark,
+    15→  Wallet,
+    16→  CreditCard,
+    17→  Sparkles,
+    18→  Store,
+    19→  ShieldCheck,
+    20→  ShieldAlert,
+    21→  Shield,
+    22→  CircleAlert,
+    23→  X,
+    24→  Send,
+    25→  Plus,
+    26→  ArrowLeft,
+    27→  Filter,
+    28→  Link2,
+    29→  MessageSquare,
+    30→  Pencil,
+    31→  Paperclip,
+    32→  Smile,
+    33→  CheckCircle2,
+    34→  AlertTriangle,
+    35→  Clock,
+    36→  Share2,
+    37→  Copy,
+    38→  Trash2,
+    39→  MoreVertical,
+    40→  Phone,
+    41→  Video,
+    42→  Info,
+    43→} from "lucide-react";
+    44→import { useInbox, useComposeMessage, type SmsMessageRow } from "../use-intelligence";
+    45→import { toast } from "sonner";
+    46→import { cn } from "@/lib/utils";
+    47→
+    48→const senderTypeIcon: Record<string, React.ReactNode> = {
+    49→  bank: <Building2 className="h-4 w-4" />,
+    50→  paymentsBank: <Landmark className="h-4 w-4" />,
+    51→  nbfc: <Sparkles className="h-4 w-4" />,
+    52→  wallet: <Wallet className="h-4 w-4" />,
+    53→  creditCard: <CreditCard className="h-4 w-4" />,
+    54→  unknown: <Store className="h-4 w-4" />,
+    55→};
+    56→
+    57→const classConfig: Record<string, { icon: React.ReactNode; cls: string; label: string; dot: string }> = {
+    58→  verified: { icon: <ShieldCheck className="h-3 w-3" />, cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300", label: "Verified", dot: "bg-emerald-500" },
+    59→  unverified: { icon: <Shield className="h-3 w-3" />, cls: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300", label: "Unverified", dot: "bg-amber-500" },
+    60→  flagged: { icon: <ShieldAlert className="h-3 w-3" />, cls: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300", label: "Flagged", dot: "bg-rose-500" },
+    61→  unparsed: { icon: <CircleAlert className="h-3 w-3" />, cls: "border-muted-foreground/30 bg-muted text-muted-foreground", label: "Unparsed", dot: "bg-muted-foreground" },
+    62→};
+    63→
+    64→// Avatar colors by sender hash
+    65→const avatarColors = [
+    66→  "bg-blue-500", "bg-emerald-500", "bg-violet-500", "bg-amber-500",
+    67→  "bg-rose-500", "bg-cyan-500", "bg-indigo-500", "bg-teal-500",
+    68→];
+    69→
+    70→function getAvatarColor(sender: string): string {
+    71→  let hash = 0;
+    72→  for (let i = 0; i < sender.length; i++) hash = sender.charCodeAt(i) + ((hash << 5) - hash);
+    73→  return avatarColors[Math.abs(hash) % avatarColors.length];
+    74→}
+    75→
+    76→function getInitials(sender: string): string {
+    77→  const clean = sender.replace(/[^A-Za-z0-9]/g, "");
+    78→  return clean.slice(0, 2).toUpperCase();
+    79→}
+    80→
+    81→function formatTime(iso: string): string {
+    82→  const d = new Date(iso);
+    83→  const now = new Date();
+    84→  const isToday = d.toDateString() === now.toDateString();
+    85→  if (isToday) return d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+    86→  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+    87→}
+    88→
+    89→export function InboxView() {
+    90→  const [search, setSearch] = useState("");
+    91→  const [classFilter, setClassFilter] = useState<string>("");
+    92→  const [selected, setSelected] = useState<SmsMessageRow | null>(null);
+    93→  const [showCompose, setShowCompose] = useState(false);
+    94→  const [activeThread, setActiveThread] = useState<string | null>(null);
+    95→  const [replyText, setReplyText] = useState("");
+    96→
+    97→  const inboxQ = useInbox({
+    98→    search: search || undefined,
+    99→    classification: classFilter || undefined,
+   100→  });
+   101→
+   102→  const allMessages = inboxQ.data?.messages ?? [];
+   103→  const total = inboxQ.data?.total ?? 0;
+   104→
+   105→  // Group by sender for conversation list
+   106→  const threads = useMemo(() => {
+   107→    const map = new Map<string, { sender: string; messages: SmsMessageRow[]; lastMsg: SmsMessageRow }>();
+   108→    for (const msg of allMessages) {
+   109→      const key = msg.sender ?? "Unknown";
+   110→      const existing = map.get(key);
+   111→      if (existing) {
+   112→        existing.messages.push(msg);
+   113→        if (new Date(msg.receivedAt) > new Date(existing.lastMsg.receivedAt)) {
+   114→          existing.lastMsg = msg;
+   115→        }
+   116→      } else {
+   117→        map.set(key, { sender: key, messages: [msg], lastMsg: msg });
+   118→      }
+   119→    }
+   120→    return Array.from(map.values()).sort(
+   121→      (a, b) => new Date(b.lastMsg.receivedAt).getTime() - new Date(a.lastMsg.receivedAt).getTime()
+   122→    );
+   123→  }, [allMessages]);
+   124→
+   125→  // Messages in active thread
+   126→  const threadMessages = useMemo(() => {
+   127→    if (!activeThread) return [];
+   128→    return allMessages
+   129→      .filter((m) => (m.sender ?? "Unknown") === activeThread)
+   130→      .sort((a, b) => new Date(a.receivedAt).getTime() - new Date(b.receivedAt).getTime());
+   131→  }, [activeThread, allMessages]);
+   132→
+   133→  const handleSelectThread = (sender: string) => {
+   134→    setActiveThread(sender);
+   135→    setSelected(null);
+   136→  };
+   137→
+   138→  const handleBack = () => {
+   139→    setActiveThread(null);
+   140→    setSelected(null);
+   141→  };
+   142→
+   143→  return (
+   144→    <div className="flex h-[calc(100vh-3.5rem)] flex-col lg:h-[calc(100vh-2.5rem)] safe-bottom">
+   145→      {!activeThread ? (
+   146→        <ConversationList
+   147→          threads={threads}
+   148→          total={total}
+   149→          search={search}
+   150→          setSearch={setSearch}
+   151→          classFilter={classFilter}
+   152→          setClassFilter={setClassFilter}
+   153→          onSelectThread={handleSelectThread}
+   154→          onCompose={() => setShowCompose(true)}
+   155→          loading={inboxQ.isLoading}
+   156→        />
+   157→      ) : (
+   158→        <ConversationView
+   159→          sender={activeThread}
+   160→          messages={threadMessages}
+   161→          onBack={handleBack}
+   162→          onMessageClick={setSelected}
+   163→          replyText={replyText}
+   164→          setReplyText={setReplyText}
+   165→        />
+   166→      )}
+   167→
+   168→      <MessageDetailDialog message={selected} onClose={() => setSelected(null)} />
+   169→      <ComposeDialog open={showCompose} onOpenChange={setShowCompose} />
+   170→    </div>
+   171→  );
+   172→}
+   173→
+   174→// ============ Conversation List (Google SMS style) ============
+   175→
+   176→function ConversationList({
+   177→  threads,
+   178→  total,
+   179→  search,
+   180→  setSearch,
+   181→  classFilter,
+   182→  setClassFilter,
+   183→  onSelectThread,
+   184→  onCompose,
+   185→  loading,
+   186→}: {
+   187→  threads: Array<{ sender: string; messages: SmsMessageRow[]; lastMsg: SmsMessageRow }>;
+   188→  total: number;
+   189→  search: string;
+   190→  setSearch: (s: string) => void;
+   191→  classFilter: string;
+   192→  setClassFilter: (s: string) => void;
+   193→  onSelectThread: (sender: string) => void;
+   194→  onCompose: () => void;
+   195→  loading: boolean;
+   196→}) {
+   197→  return (
+   198→    <>
+   199→      {/* Header */}
+   200→      <div className="flex items-center gap-3 border-b bg-background px-4 py-3 safe-top">
+   201→        <h2 className="text-lg font-semibold tracking-tight">Messages</h2>
+   202→        {total > 0 && (
+   203→          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+   204→            {total}
+   205→          </span>
+   206→        )}
+   207→        <Button variant="ghost" size="sm" onClick={onCompose} className="ml-auto gap-1.5">
+   208→          <Pencil className="h-4 w-4" />
+   209→          <span className="hidden sm:inline">Compose</span>
+   210→        </Button>
+   211→      </div>
+   212→
+   213→      {/* Search bar — Google SMS style pill */}
+   214→      <div className="px-3 py-2">
+   215→        <div className="relative">
+   216→          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+   217→          <Input
+   218→            value={search}
+   219→            onChange={(e) => setSearch(e.target.value)}
+   220→            placeholder="Search in messages"
+   221→            className="h-10 rounded-full bg-muted pl-10 pr-10 text-sm border-0 focus-visible:ring-1 focus-visible:ring-primary"
+   222→          />
+   223→          {search && (
+   224→            <button
+   225→              onClick={() => setSearch("")}
+   226→              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+   227→            >
+   228→              <X className="h-4 w-4" />
+   229→            </button>
+   230→          )}
+   231→        </div>
+   232→      </div>
+   233→
+   234→      {/* Filter chips */}
+   235→      <div className="flex gap-1.5 px-3 pb-2 overflow-x-auto scrollbar-thin">
+   236→        {["", "verified", "unverified", "flagged"].map((c) => (
+   237→          <button
+   238→            key={c || "all"}
+   239→            onClick={() => setClassFilter(c)}
+   240→            className={cn(
+   241→              "shrink-0 rounded-full px-3 py-1 text-[11px] font-medium transition-all",
+   242→              classFilter === c
+   243→                ? "bg-primary text-primary-foreground"
+   244→                : "bg-muted text-muted-foreground hover:bg-muted/70"
+   245→            )}
+   246→          >
+   247→            {c || "All"}
+   248→          </button>
+   249→        ))}
+   250→      </div>
+   251→
+   252→      {/* Conversation list */}
+   253→      {loading ? (
+   254→        <div className="space-y-2 p-3">
+   255→          {Array.from({ length: 6 }).map((_, i) => (
+   256→            <div key={i} className="flex items-center gap-3 rounded-2xl p-3">
+   257→              <div className="h-12 w-12 rounded-full shimmer" />
+   258→              <div className="flex-1 space-y-2">
+   259→                <div className="h-4 w-32 rounded shimmer" />
+   260→                <div className="h-3 w-48 rounded shimmer" />
+   261→              </div>
+   262→            </div>
+   263→          ))}
+   264→        </div>
+   265→      ) : threads.length === 0 ? (
+   266→        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+   267→          <div className="grid h-16 w-16 place-items-center rounded-full bg-muted">
+   268→            <MessageSquare className="h-7 w-7 text-muted-foreground" />
+   269→          </div>
+   270→          <div>
+   271→            <p className="text-sm font-medium">No messages</p>
+   272→            <p className="max-w-[20rem] text-xs text-muted-foreground">
+   273→              {search ? `No messages match "${search}".` : "Paste or compose an SMS to get started."}
+   274→            </p>
+   275→          </div>
+   276→          <Button variant="outline" size="sm" onClick={onCompose} className="gap-1.5">
+   277→            <Plus className="h-3.5 w-3.5" />
+   278→            Compose
+   279→          </Button>
+   280→        </div>
+   281→      ) : (
+   282→        <div className="flex-1 overflow-y-auto scrollbar-thin">
+   283→          {threads.map((thread) => {
+   284→            const cfg = classConfig[thread.lastMsg.classification] ?? classConfig.unparsed;
+   285→            const avatarColor = getAvatarColor(thread.sender);
+   286→            const initials = getInitials(thread.sender);
+   287→            return (
+   288→              <button
+   289→                key={thread.sender}
+   290→                onClick={() => onSelectThread(thread.sender)}
+   291→                className="group flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/50 active:bg-muted"
+   292→              >
+   293→                {/* Avatar */}
+   294→                <div className="relative shrink-0">
+   295→                  <div className={cn("grid h-12 w-12 place-items-center rounded-full text-sm font-semibold text-white", avatarColor)}>
+   296→                    {initials}
+   297→                  </div>
+   298→                  <span className={cn("absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-background", cfg.dot)} />
+   299→                </div>
+   300→                {/* Content */}
+   301→                <div className="min-w-0 flex-1">
+   302→                  <div className="flex items-center justify-between gap-2">
+   303→                    <span className="truncate text-sm font-semibold">{thread.sender}</span>
+   304→                    <span className="shrink-0 text-[10px] text-muted-foreground">
+   305→                      {formatTime(thread.lastMsg.receivedAt)}
+   306→                    </span>
+   307→                  </div>
+   308→                  <div className="flex items-center gap-1.5">
+   309→                    <p className="truncate text-xs text-muted-foreground">
+   310→                      {thread.lastMsg.rawText}
+   311→                    </p>
+   312→                    <span className="ml-auto shrink-0 rounded-full bg-muted px-1.5 py-0 text-[9px] font-medium text-muted-foreground">
+   313→                      {thread.messages.length}
+   314→                    </span>
+   315→                  </div>
+   316→                </div>
+   317→              </button>
+   318→            );
+   319→          })}
+   320→        </div>
+   321→      )}
+   322→    </>
+   323→  );
+   324→}
+   325→
+   326→// ============ Conversation View (Chat thread) ============
+   327→
+   328→function ConversationView({
+   329→  sender,
+   330→  messages,
+   331→  onBack,
+   332→  onMessageClick,
+   333→  replyText,
+   334→  setReplyText,
+   335→}: {
+   336→  sender: string;
+   337→  messages: SmsMessageRow[];
+   338→  onBack: () => void;
+   339→  onMessageClick: (msg: SmsMessageRow) => void;
+   340→  replyText: string;
+   341→  setReplyText: (s: string) => void;
+   342→}) {
+   343→  const composeMut = useComposeMessage();
+   344→  const scrollRef = useRef<HTMLDivElement>(null);
+   345→  const avatarColor = getAvatarColor(sender);
+   346→  const initials = getInitials(sender);
+   347→  const cfg = messages.length > 0 ? classConfig[messages[messages.length - 1].classification] ?? classConfig.unparsed : classConfig.unparsed;
+   348→
+   349→  // Auto-scroll to bottom
+   350→  useEffect(() => {
+   351→    if (scrollRef.current) {
+   352→      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+   353→    }
+   354→  }, [messages]);
+   355→
+   356→  const sendReply = async () => {
+   357→    if (!replyText.trim()) return;
+   358→    try {
+   359→      const r = await composeMut.mutateAsync({ sender, text: replyText.trim() });
+   360→      toast.success(r.parsed ? "Sent & parsed" : "Sent", {
+   361→        description: r.classification === "verified" ? "Transaction created" : r.classification,
+   362→      });
+   363→      setReplyText("");
+   364→    } catch (e) {
+   365→      toast.error(e instanceof Error ? e.message : "Failed to send");
+   366→    }
+   367→  };
+   368→
+   369→  return (
+   370→    <>
+   371→      {/* Chat header — Google SMS style */}
+   372→      <div className="flex items-center gap-2 border-b bg-background px-2 py-2 safe-top">
+   373→        <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full" onClick={onBack} aria-label="Back">
+   374→          <ArrowLeft className="h-5 w-5" />
+   375→        </Button>
+   376→        <div className="relative shrink-0">
+   377→          <div className={cn("grid h-10 w-10 place-items-center rounded-full text-xs font-semibold text-white", avatarColor)}>
+   378→            {initials}
+   379→          </div>
+   380→          <span className={cn("absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background", cfg.dot)} />
+   381→        </div>
+   382→        <div className="min-w-0 flex-1">
+   383→          <p className="truncate text-sm font-semibold">{sender}</p>
+   384→          <p className="text-[10px] text-muted-foreground">
+   385→            {messages.length} message{messages.length !== 1 ? "s" : ""} · {cfg.label}
+   386→          </p>
+   387→        </div>
+   388→        <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full" aria-label="More options">
+   389→          <MoreVertical className="h-5 w-5" />
+   390→        </Button>
+   391→      </div>
+   392→
+   393→      {/* Messages — chat bubbles */}
+   394→      <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin bg-muted/20 px-3 py-4">
+   395→        <div className="mx-auto max-w-2xl space-y-2">
+   396→          {messages.map((msg, i) => {
+   397→            const msgCfg = classConfig[msg.classification] ?? classConfig.unparsed;
+   398→            const showDate = i === 0 || new Date(messages[i - 1].receivedAt).toDateString() !== new Date(msg.receivedAt).toDateString();
+   399→            return (
+   400→              <div key={msg.id}>
+   401→                {showDate && (
+   402→                  <div className="my-3 flex justify-center">
+   403→                    <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-medium text-muted-foreground">
+   404→                      {new Date(msg.receivedAt).toLocaleDateString("en-IN", { dateStyle: "medium" })}
+   405→                    </span>
+   406→                  </div>
+   407→                )}
+   408→                <div
+   409→                  className="group flex cursor-pointer flex-col gap-0.5"
+   410→                  onClick={() => onMessageClick(msg)}
+   411→                >
+   412→                  {/* Incoming bubble */}
+   413→                  <div className="flex justify-start">
+   414→                    <div className="max-w-[80%] rounded-2xl rounded-bl-md bg-card border px-4 py-2.5 shadow-sm transition-all hover:shadow-md">
+   415→                      <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{msg.rawText}</p>
+   416→                      <div className="mt-1 flex items-center gap-1.5">
+   417→                        <span className={cn("inline-flex items-center gap-0.5 rounded-full border px-1.5 py-0 text-[9px] font-medium", msgCfg.cls)}>
+   418→                          {msgCfg.icon}
+   419→                          {msgCfg.label}
+   420→                        </span>
+   421→                        <span className="text-[9px] text-muted-foreground">
+   422→                          {new Date(msg.receivedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+   423→                        </span>
+   424→                      </div>
+   425→                    </div>
+   426→                  </div>
+   427→                </div>
+   428→              </div>
+   429→            );
+   430→          })}
+   431→        </div>
+   432→      </div>
+   433→
+   434→      {/* Reply bar — Google SMS style */}
+   435→      <div className="border-t bg-background px-3 py-2 safe-bottom">
+   436→        <div className="mx-auto flex max-w-2xl items-center gap-2">
+   437→          <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-full" aria-label="Attach" disabled>
+   438→            <Paperclip className="h-5 w-5 text-muted-foreground" />
+   439→          </Button>
+   440→          <div className="relative flex-1">
+   441→            <Input
+   442→              value={replyText}
+   443→              onChange={(e) => setReplyText(e.target.value)}
+   444→              onKeyDown={(e) => e.key === "Enter" && sendReply()}
+   445→              placeholder="Type a message or paste SMS…"
+   446→              className="h-10 rounded-full bg-muted border-0 pl-4 pr-10 text-sm focus-visible:ring-1 focus-visible:ring-primary"
+   447→              disabled={composeMut.isPending}
+   448→            />
+   449→            <Button
+   450→              variant="ghost"
+   451→              size="icon"
+   452→              className="absolute right-1 top-1/2 h-8 w-8 -translate-y-1/2 rounded-full"
+   453→              aria-label="Emoji"
+   454→              disabled
+   455→            >
+   456→              <Smile className="h-5 w-5 text-muted-foreground" />
+   457→            </Button>
+   458→          </div>
+   459→          <Button
+   460→            size="icon"
+   461→            className="h-10 w-10 shrink-0 rounded-full"
+   462→            onClick={sendReply}
+   463→            disabled={composeMut.isPending || !replyText.trim()}
+   464→            aria-label="Send"
+   465→          >
+   466→            {composeMut.isPending ? (
+   467→              <Clock className="h-5 w-5 animate-spin" />
+   468→            ) : (
+   469→              <Send className="h-5 w-5" />
+   470→            )}
+   471→          </Button>
+   472→        </div>
+   473→      </div>
+   474→    </>
+   475→  );
+   476→}
+   477→
+   478→// ============ Message Detail Dialog ============
+   479→
+   480→function MessageDetailDialog({
+   481→  message,
+   482→  onClose,
+   483→}: {
+   484→  message: SmsMessageRow | null;
+   485→  onClose: () => void;
+   486→}) {
+   487→  const [showActions, setShowActions] = useState(false);
+   488→
+   489→  const handleShare = async () => {
+   490→    if (!message) return;
+   491→    if (navigator.share) {
+   492→      try {
+   493→        await navigator.share({
+   494→          title: `SMS from ${message.sender}`,
+   495→          text: message.rawText,
+   496→        });
+   497→      } catch {
+   498→        // User cancelled
+   499→      }
+   500→    } else {
+   501→      await navigator.clipboard.writeText(message.rawText);
+   502→      toast.success("Message copied to clipboard");
+   503→    }
+   504→  };
+   505→
+   506→  const handleCopy = async () => {
+   507→    if (!message) return;
+   508→    await navigator.clipboard.writeText(message.rawText);
+   509→    toast.success("Copied to clipboard");
+   510→  };
+   511→
+   512→  return (
+   513→    <Dialog open={!!message} onOpenChange={(v) => { if (!v) { setShowActions(false); onClose(); } }}>
+   514→      <DialogContent className="max-w-lg gap-0 p-0" aria-describedby={undefined} showCloseButton={false}>
+   515→        <DialogTitle className="sr-only">Message Detail</DialogTitle>
+   516→        {message && (
+   517→          <>
+   518→            {/* Header */}
+   519→            <div className="flex items-center gap-3 border-b bg-muted/20 px-4 py-3 safe-top">
+   520→              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => { setShowActions(false); onClose(); }} aria-label="Close">
+   521→                <ArrowLeft className="h-4 w-4" />
+   522→              </Button>
+   523→              <div className={cn("grid h-9 w-9 place-items-center rounded-full text-xs font-semibold text-white", getAvatarColor(message.sender ?? "U"))}>
+   524→                {getInitials(message.sender ?? "U")}
+   525→              </div>
+   526→              <div className="min-w-0 flex-1">
+   527→                <p className="truncate text-sm font-semibold">{message.sender ?? "Unknown sender"}</p>
+   528→                <p className="text-[10px] text-muted-foreground">
+   529→                  {new Date(message.receivedAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+   530→                </p>
+   531→              </div>
+   532→              <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => setShowActions(!showActions)} aria-label="More options">
+   533→                <MoreVertical className="h-4 w-4" />
+   534→              </Button>
+   535→            </div>
+   536→
+   537→            {/* Action sheet */}
+   538→            {showActions && (
+   539→              <div className="border-b bg-muted/10 py-1 animate-fade-in">
+   540→                <button onClick={handleShare} className="flex w-full items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50">
+   541→                  <Share2 className="h-4 w-4 text-muted-foreground" />
+   542→                  Share message
+   543→                </button>
+   544→                <button onClick={handleCopy} className="flex w-full items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/50">
+   545→                  <Copy className="h-4 w-4 text-muted-foreground" />
+   546→                  Copy text
+   547→                </button>
+   548→              </div>
+   549→            )}
+   550→
+   551→            {/* Message body — bubble style */}
+   552→            <div className="px-4 py-4">
+   553→              <div className="rounded-2xl rounded-tl-md border bg-muted/20 p-3">
+   554→                <pre className="whitespace-pre-wrap text-[13px] leading-relaxed">{message.rawText}</pre>
+   555→              </div>
+   556→
+   557→              {/* Meta info */}
+   558→              <div className="mt-3 space-y-2 text-xs">
+   559→                <div className="flex items-center justify-between">
+   560→                  <span className="text-muted-foreground">Status</span>
+   561→                  <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0 text-[10px] font-medium", (classConfig[message.classification] ?? classConfig.unparsed).cls)}>
+   562→                    {(classConfig[message.classification] ?? classConfig.unparsed).icon}
+   563→                    {(classConfig[message.classification] ?? classConfig.unparsed).label}
+   564→                  </span>
+   565→                </div>
+   566→                <div className="flex items-center justify-between">
+   567→                  <span className="text-muted-foreground">Sender Type</span>
+   568→                  <span className="font-medium capitalize">{message.senderType}</span>
+   569→                </div>
+   570→                {message.linkedRecordType && (
+   571→                  <div className="flex items-center justify-between">
+   572→                    <span className="text-muted-foreground">Linked Record</span>
+   573→                    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-primary">
+   574→                      <Link2 className="h-2.5 w-2.5" />
+   575→                      {message.linkedRecordType} → {message.linkedRecordId?.slice(-8)}
+   576→                    </span>
+   577→                  </div>
+   578→                )}
+   579→              </div>
+   580→
+   581→              {/* Share buttons */}
+   582→              <div className="mt-4 flex gap-2 border-t pt-3">
+   583→                <Button variant="outline" size="sm" onClick={handleShare} className="flex-1 gap-1.5">
+   584→                  <Share2 className="h-3.5 w-3.5" />
+   585→                  Share
+   586→                </Button>
+   587→                <Button variant="outline" size="sm" onClick={handleCopy} className="flex-1 gap-1.5">
+   588→                  <Copy className="h-3.5 w-3.5" />
+   589→                  Copy
+   590→                </Button>
+   591→              </div>
+   592→            </div>
+   593→          </>
+   594→        )}
+   595→      </DialogContent>
+   596→    </Dialog>
+   597→  );
+   598→}
+   599→
+   600→// ============ Compose Dialog ============
+   601→
+   602→function ComposeDialog({
+   603→  open,
+   604→  onOpenChange,
+   605→}: {
+   606→  open: boolean;
+   607→  onOpenChange: (v: boolean) => void;
+   608→}) {
+   609→  const [sender, setSender] = useState("");
+   610→  const [text, setText] = useState("");
+   611→  const composeMut = useComposeMessage();
+   612→
+   613→  const send = async () => {
+   614→    if (!text.trim()) {
+   615→      toast.error("Message text is required");
+   616→      return;
+   617→    }
+   618→    try {
+   619→      const r = await composeMut.mutateAsync({
+   620→        sender: sender.trim() || undefined,
+   621→        text: text.trim(),
+   622→      });
+   623→      if (r.classification === "verified") {
+   624→        toast.success("Sent — transaction parsed!", { description: `Classification: ${r.classification}` });
+   625→      } else if (r.classification === "flagged") {
+   626→        toast.warning("Sent — flagged as suspicious", { description: "Moved to Security Alerts" });
+   627→      } else {
+   628→        toast.success("Message sent", { description: `Classification: ${r.classification}` });
+   629→      }
+   630→      setSender("");
+   631→      setText("");
+   632→      onOpenChange(false);
+   633→    } catch (e) {
+   634→      toast.error(e instanceof Error ? e.message : "Failed to send");
+   635→    }
+   636→  };
+   637→
+   638→  return (
+   639→    <Dialog open={open} onOpenChange={(v) => { if (!v) { setSender(""); setText(""); } onOpenChange(v); }}>
+   640→      <DialogContent className="max-w-lg gap-0 p-0" aria-describedby={undefined} showCloseButton={false}>
+   641→        <DialogTitle className="sr-only">Compose Message</DialogTitle>
+   642→        <div className="flex items-center gap-3 border-b bg-muted/20 px-4 py-3 safe-top">
+   643→          <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" onClick={() => onOpenChange(false)} aria-label="Close">
+   644→            <X className="h-4 w-4" />
+   645→          </Button>
+   646→          <h3 className="text-sm font-semibold">New Message</h3>
+   647→        </div>
+   648→        <div className="space-y-3 px-4 py-4">
+   649→          <div className="space-y-1.5">
+   650→            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   651→              Sender (optional)
+   652→            </label>
+   653→            <Input
+   654→              value={sender}
+   655→              onChange={(e) => setSender(e.target.value)}
+   656→              placeholder="e.g. SBIINB, HDFCBK, or +91…"
+   657→              className="h-10 text-sm"
+   658→            />
+   659→          </div>
+   660→          <div className="space-y-1.5">
+   661→            <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   662→              Message
+   663→            </label>
+   664→            <textarea
+   665→              value={text}
+   666→              onChange={(e) => setText(e.target.value)}
+   667→              placeholder="Type or paste an SMS message…"
+   668→              className="min-h-[120px] w-full resize-y rounded-xl border bg-background px-3 py-2 text-sm leading-relaxed focus:outline-none focus:ring-1 focus:ring-primary"
+   669→              autoFocus
+   670→            />
+   671→          </div>
+   672→          <div className="flex items-center gap-1.5 border-t pt-2">
+   673→            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-full" title="Attach" disabled>
+   674→              <Paperclip className="h-4 w-4 text-muted-foreground" />
+   675→            </Button>
+   676→            <div className="ml-auto flex items-center gap-1.5 text-[9px] text-muted-foreground">
+   677→              <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+   678→              Auto-parses transactions
+   679→            </div>
+   680→          </div>
+   681→        </div>
+   682→        <div className="flex items-center justify-end gap-2 border-t bg-muted/20 px-4 py-3 safe-bottom">
+   683→          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+   684→          <Button onClick={send} disabled={composeMut.isPending || !text.trim()} className="gap-1.5">
+   685→            {composeMut.isPending ? <Clock className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+   686→            Send
+   687→          </Button>
+   688→        </div>
+   689→      </DialogContent>
+   690→    </Dialog>
+   691→  );
+   692→}
+   693→

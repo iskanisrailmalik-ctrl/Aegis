@@ -1,0 +1,114 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+}
+
+android {
+    namespace = "com.aegis.sms"
+    compileSdk = 34
+
+    defaultConfig {
+        applicationId = "com.aegis.sms"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // ==========================================================
+    // Phase E: Dual-Track Build Variants
+    // ==========================================================
+    // Two flavors support both Play Store (web-only) and
+    // sideloaded (full native SMS) distributions from one codebase.
+    //
+    // Web flavor:
+    //   - No SMS permissions
+    //   - No SMS receivers/service
+    //   - Play Store compliant
+    //
+    // Native flavor:
+    //   - Full SMS permissions
+    //   - All 4 default SMS app components
+    //   - Sideload only
+    // ==========================================================
+    flavorDimensions += "track"
+    productFlavors {
+        create("web") {
+            dimension = "track"
+            applicationIdSuffix = ".web"
+            versionNameSuffix = "-web"
+            // Web flavor: no SMS permissions
+            // Uses src/web/AndroidManifest.xml (minimal, no SMS components)
+        }
+        create("native") {
+            dimension = "track"
+            applicationIdSuffix = ".native"
+            versionNameSuffix = "-native"
+            // Native flavor: full SMS permissions
+            // Uses src/native/AndroidManifest.xml (all SMS components)
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (project.hasProperty("RELEASE_STORE_FILE") && file(project.property("RELEASE_STORE_FILE")).exists()) {
+                storeFile = file(project.property("RELEASE_STORE_FILE"))
+                storePassword = project.property("RELEASE_STORE_PASSWORD")
+                keyAlias = project.property("RELEASE_KEY_ALIAS")
+                keyPassword = project.property("RELEASE_KEY_PASSWORD")
+            } else if (System.getenv("KEYSTORE_PATH") != null && file(System.getenv("KEYSTORE_PATH")).exists()) {
+                storeFile = file(System.getenv("KEYSTORE_PATH"))
+                storePassword = System.getenv("KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            } else {
+                // Fallback to debug signing config for testing release builds
+                signingConfig = signingConfigs.getByName("debug")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+}
+
+dependencies {
+    // Capacitor — the WebView bridge framework
+    implementation("com.getcapacitor:capacitor-android:6.0.0")
+
+    // AndroidX core libraries
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("com.google.android.material:material:1.11.0")
+
+    // Notification support (AndroidX NotificationCompat)
+    implementation("androidx.core:core:1.12.0")
+
+    // Testing
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
+}

@@ -1,0 +1,652 @@
+     1→"use client";
+     2→
+     3→import { useState, useRef } from "react";
+     4→import { Card } from "@/components/ui/card";
+     5→import { Badge } from "@/components/ui/badge";
+     6→import { Button } from "@/components/ui/button";
+     7→import { ScrollArea } from "@/components/ui/scroll-area";
+     8→import {
+     9→  Dialog,
+    10→  DialogContent,
+    11→  DialogHeader,
+    12→  DialogTitle,
+    13→  DialogFooter,
+    14→} from "@/components/ui/dialog";
+    15→import { Input } from "@/components/ui/input";
+    16→import { Label } from "@/components/ui/label";
+    17→import {
+    18→  Select,
+    19→  SelectContent,
+    20→  SelectItem,
+    21→  SelectTrigger,
+    22→  SelectValue,
+    23→} from "@/components/ui/select";
+    24→import {
+    25→  FileText,
+    26→  Upload,
+    27→  Trash2,
+    28→  FileCheck,
+    29→  FileWarning,
+    30→  Loader2,
+    31→  TrendingUp,
+    32→} from "lucide-react";
+    33→import {
+    34→  useDocuments,
+    35→  useUploadDocument,
+    36→  useDeleteDocument,
+    37→  useReconcileAction,
+    38→  type DocumentRow,
+    39→} from "./use-intelligence";
+    40→import { formatINR, relativeTime } from "./format";
+    41→import { toast } from "sonner";
+    42→import { cn } from "@/lib/utils";
+    43→
+    44→const STATUS_STYLE: Record<string, { icon: React.ReactNode; cls: string }> = {
+    45→  parsed: { icon: <FileCheck className="h-2.5 w-2.5" />, cls: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" },
+    46→  needsReview: { icon: <FileWarning className="h-2.5 w-2.5" />, cls: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300" },
+    47→  failed: { icon: <FileWarning className="h-2.5 w-2.5" />, cls: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300" },
+    48→  pending: { icon: <Loader2 className="h-2.5 w-2.5 animate-spin" />, cls: "border-muted-foreground/30 bg-muted text-muted-foreground" },
+    49→};
+    50→
+    51→export function DocumentsSection() {
+    52→  const docsQ = useDocuments();
+    53→  const delMut = useDeleteDocument();
+    54→  const [showUpload, setShowUpload] = useState(false);
+    55→  const [selected, setSelected] = useState<DocumentRow | null>(null);
+    56→
+    57→  const docs = docsQ.data?.documents ?? [];
+    58→
+    59→  const onDelete = async (id: string) => {
+    60→    try {
+    61→      await delMut.mutateAsync(id);
+    62→      toast.success("Document deleted");
+    63→    } catch (e) {
+    64→      toast.error(e instanceof Error ? e.message : "Failed");
+    65→    }
+    66→  };
+    67→
+    68→  return (
+    69→    <Card className="overflow-hidden">
+    70→      <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-5 py-3">
+    71→        <div className="flex items-center gap-2">
+    72→          <FileText className="h-4 w-4 text-primary" />
+    73→          <h2 className="text-sm font-semibold tracking-tight">Documents</h2>
+    74→          {docs.length > 0 && (
+    75→            <Badge variant="secondary" className="rounded-full text-[10px]">
+    76→              {docs.length}
+    77→            </Badge>
+    78→          )}
+    79→        </div>
+    80→        <Button
+    81→          variant="outline"
+    82→          size="sm"
+    83→          onClick={() => setShowUpload(true)}
+    84→          className="h-7 gap-1.5 text-xs"
+    85→        >
+    86→          <Upload className="h-3.5 w-3.5" />
+    87→          Upload
+    88→        </Button>
+    89→      </div>
+    90→
+    91→      {docsQ.isLoading ? (
+    92→        <div className="space-y-2 p-4">
+    93→          {Array.from({ length: 2 }).map((_, i) => (
+    94→            <div key={i} className="h-14 rounded-lg shimmer" />
+    95→          ))}
+    96→        </div>
+    97→      ) : docs.length === 0 ? (
+    98→        <div className="flex flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+    99→          <div className="grid h-10 w-10 place-items-center rounded-full bg-muted">
+   100→            <FileText className="h-4 w-4 text-muted-foreground" />
+   101→          </div>
+   102→          <p className="text-sm font-medium">No documents uploaded</p>
+   103→          <p className="max-w-[20rem] text-xs text-muted-foreground">
+   104→            Upload loan agreements, EMI schedules, or bank statements (CSV) to
+   105→            enrich and reconcile your SMS-derived data.
+   106→          </p>
+   107→        </div>
+   108→      ) : (
+   109→        <ScrollArea className="max-h-80">
+   110→          <ul className="divide-y">
+   111→            {docs.map((doc) => {
+   112→              const status = STATUS_STYLE[doc.extractionStatus] ?? STATUS_STYLE.pending;
+   113→              return (
+   114→                <li
+   115→                  key={doc.id}
+   116→                  className="group flex cursor-pointer items-start gap-3 px-5 py-3 transition-colors hover:bg-muted/30"
+   117→                  onClick={() => setSelected(doc)}
+   118→                >
+   119→                  <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+   120→                    <FileText className="h-4 w-4" />
+   121→                  </div>
+   122→                  <div className="min-w-0 flex-1">
+   123→                    <p className="truncate text-xs font-medium">{doc.fileName}</p>
+   124→                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+   125→                      <span className="capitalize">{doc.documentType.replace(/([A-Z])/g, " $1")}</span>
+   126→                      {doc.sourceInstitution && (
+   127→                        <span className="opacity-70">· {doc.sourceInstitution}</span>
+   128→                      )}
+   129→                      <span className="opacity-70">· {relativeTime(doc.uploadedAt)}</span>
+   130→                    </div>
+   131→                  </div>
+   132→                  <span
+   133→                    className={cn(
+   134→                      "inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0 text-[9px] font-medium capitalize",
+   135→                      status.cls
+   136→                    )}
+   137→                  >
+   138→                    {status.icon}
+   139→                    {doc.extractionStatus}
+   140→                  </span>
+   141→                  <Button
+   142→                    variant="ghost"
+   143→                    size="icon"
+   144→                    className="h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+   145→                    onClick={(e) => {
+   146→                      e.stopPropagation();
+   147→                      onDelete(doc.id);
+   148→                    }}
+   149→                  >
+   150→                    <Trash2 className="h-3.5 w-3.5" />
+   151→                  </Button>
+   152→                </li>
+   153→              );
+   154→            })}
+   155→          </ul>
+   156→        </ScrollArea>
+   157→      )}
+   158→
+   159→      <UploadDocumentDialog open={showUpload} onOpenChange={setShowUpload} />
+   160→      <DocumentDetailDialog doc={selected} onClose={() => setSelected(null)} />
+   161→    </Card>
+   162→  );
+   163→}
+   164→
+   165→function UploadDocumentDialog({
+   166→  open,
+   167→  onOpenChange,
+   168→}: {
+   169→  open: boolean;
+   170→  onOpenChange: (v: boolean) => void;
+   171→}) {
+   172→  const uploadMut = useUploadDocument();
+   173→  const [docType, setDocType] = useState<"auto" | "loanAgreement" | "emiSchedule" | "bankStatement">("auto");
+   174→  const [fileName, setFileName] = useState("");
+   175→  const [content, setContent] = useState("");
+   176→  const [institution, setInstitution] = useState("");
+   177→  const fileInputRef = useRef<HTMLInputElement>(null);
+   178→
+   179→  const reset = () => {
+   180→    setDocType("auto");
+   181→    setFileName("");
+   182→    setContent("");
+   183→    setInstitution("");
+   184→  };
+   185→
+   186→  const handleFile = (file: File) => {
+   187→    setFileName(file.name);
+   188→    const reader = new FileReader();
+   189→    reader.onload = () => {
+   190→      setContent(String(reader.result || ""));
+   191→    };
+   192→    reader.readAsText(file);
+   193→  };
+   194→
+   195→  const upload = async () => {
+   196→    if (!fileName || !content) {
+   197→      toast.error("Provide a file name and content");
+   198→      return;
+   199→    }
+   200→    try {
+   201→      // Use enhanced ingestion endpoint
+   202→      const response = await fetch("/api/documents/enhanced", {
+   203→        method: "POST",
+   204→        headers: { "Content-Type": "application/json" },
+   205→        body: JSON.stringify({
+   206→          documentType: docType,
+   207→          fileName,
+   208→          content,
+   209→          sourceInstitution: institution || undefined,
+   210→        }),
+   211→      });
+   212→
+   213→      if (!response.ok) {
+   214→        const err = await response.json().catch(() => ({}));
+   215→        throw new Error(err.error || "Upload failed");
+   216→      }
+   217→
+   218→      const r = await response.json();
+   219→
+   220→      // Show detection result
+   221→      if (docType === "auto") {
+   222→        const typeLabel = r.documentType.replace(/([A-Z])/g, " $1").trim();
+   223→        toast.info(`Detected: ${typeLabel}`, {
+   224→          description: r.detectionReasons?.[0] ?? `Confidence: ${r.detectionConfidence}`,
+   225→        });
+   226→      }
+   227→
+   228→      // Show summary of actions
+   229→      if (r.actions && r.actions.length > 0) {
+   230→        toast.success(`Processed: ${r.actions.length} actions`, {
+   231→          description: r.actions.slice(0, 2).join(" · "),
+   232→        });
+   233→      }
+   234→
+   235→      // Show reconciliation results
+   236→      if (r.reconciliation) {
+   237→        toast.success(`Statement reconciled: ${r.reconciliation.matchRate}% match`, {
+   238→          description: `${r.reconciliation.matched} matched, ${r.reconciliation.missed} added, ${r.reconciliation.extra} extra`,
+   239→        });
+   240→      }
+   241→
+   242→      // Show loan extraction results
+   243→      if (r.loanFields?.emiAmount) {
+   244→        toast.success(`Loan extracted: EMI ${formatINR(r.loanFields.emiAmount)}`, {
+   245→          description: r.loanFields.lender ? `Lender: ${r.loanFields.lender}` : undefined,
+   246→        });
+   247→      }
+   248→
+   249→      if (r.metrics?.needsReview) {
+   250→        toast.warning("Document needs review", {
+   251→          description: "Some fields could not be extracted automatically.",
+   252→        });
+   253→      }
+   254→
+   255→      reset();
+   256→      onOpenChange(false);
+   257→    } catch (e) {
+   258→      toast.error(e instanceof Error ? e.message : "Upload failed");
+   259→    }
+   260→  };
+   261→
+   262→  return (
+   263→    <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
+   264→      <DialogContent aria-describedby={undefined} className="max-w-lg gap-0 p-0">
+   265→        <DialogHeader className="border-b px-5 py-3">
+   266→          <DialogTitle className="flex items-center gap-2 text-sm">
+   267→            <Upload className="h-4 w-4 text-primary" />
+   268→            Upload Document
+   269→          </DialogTitle>
+   270→        </DialogHeader>
+   271→        <div className="space-y-3 px-5 py-4">
+   272→          <div className="space-y-1.5">
+   273→            <Label className="text-xs">Document Type</Label>
+   274→            <Select value={docType} onValueChange={(v) => setDocType(v as typeof docType)}>
+   275→              <SelectTrigger className="h-9">
+   276→                <SelectValue />
+   277→              </SelectTrigger>
+   278→              <SelectContent>
+   279→                <SelectItem value="auto">🤖 Auto-detect (recommended)</SelectItem>
+   280→                <SelectItem value="bankStatement">Bank Statement (CSV)</SelectItem>
+   281→                <SelectItem value="loanAgreement">Loan Agreement</SelectItem>
+   282→                <SelectItem value="emiSchedule">EMI Schedule</SelectItem>
+   283→              </SelectContent>
+   284→            </Select>
+   285→          </div>
+   286→          <div className="space-y-1.5">
+   287→            <Label className="text-xs">File</Label>
+   288→            <div className="flex gap-2">
+   289→              <Input
+   290→                value={fileName}
+   291→                onChange={(e) => setFileName(e.target.value)}
+   292→                placeholder="filename.csv"
+   293→                className="h-9 text-xs"
+   294→              />
+   295→              <Button
+   296→                variant="outline"
+   297→                size="sm"
+   298→                onClick={() => fileInputRef.current?.click()}
+   299→                className="h-9 gap-1"
+   300→              >
+   301→                <Upload className="h-3.5 w-3.5" />
+   302→                Browse
+   303→              </Button>
+   304→              <input
+   305→                ref={fileInputRef}
+   306→                type="file"
+   307→                accept=".csv,.txt,.text"
+   308→                className="hidden"
+   309→                onChange={(e) => {
+   310→                  const f = e.target.files?.[0];
+   311→                  if (f) handleFile(f);
+   312→                }}
+   313→              />
+   314→            </div>
+   315→          </div>
+   316→          <div className="space-y-1.5">
+   317→            <Label className="text-xs">Source Institution (optional)</Label>
+   318→            <Input
+   319→              value={institution}
+   320→              onChange={(e) => setInstitution(e.target.value)}
+   321→              placeholder="e.g., HDFC Bank, Bajaj Finserv"
+   322→              className="h-9 text-xs"
+   323→            />
+   324→          </div>
+   325→          <div className="space-y-1.5">
+   326→            <Label className="text-xs">Content (or paste CSV text)</Label>
+   327→            <textarea
+   328→              value={content}
+   329→              onChange={(e) => setContent(e.target.value)}
+   330→              placeholder={docType === "bankStatement" ? "date,description,amount,type,balance\n..." : "Loan agreement text…"}
+   331→              className="min-h-[100px] w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-[11px] leading-relaxed"
+   332→            />
+   333→          </div>
+   334→        </div>
+   335→        <DialogFooter className="gap-2 border-t bg-muted/20 px-5 py-3">
+   336→          <Button variant="outline" onClick={() => onOpenChange(false)}>
+   337→            Cancel
+   338→          </Button>
+   339→          <Button onClick={upload} disabled={uploadMut.isPending} className="gap-1.5">
+   340→            {uploadMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+   341→            Upload & Extract
+   342→          </Button>
+   343→        </DialogFooter>
+   344→      </DialogContent>
+   345→    </Dialog>
+   346→  );
+   347→}
+   348→
+   349→function DocumentDetailDialog({
+   350→  doc,
+   351→  onClose,
+   352→}: {
+   353→  doc: DocumentRow | null;
+   354→  onClose: () => void;
+   355→}) {
+   356→  if (!doc) return null;
+   357→  const fields = doc.extractedFields ? JSON.parse(doc.extractedFields) : {};
+   358→  const recon = doc.reconciliationSummary ? JSON.parse(doc.reconciliationSummary) : null;
+   359→
+   360→  return (
+   361→    <Dialog open={!!doc} onOpenChange={(v) => !v && onClose()}>
+   362→      <DialogContent aria-describedby={undefined} className="max-w-lg gap-0 p-0 max-h-[90vh] overflow-hidden flex flex-col">
+   363→        <DialogHeader className="border-b px-5 py-3 shrink-0">
+   364→          <DialogTitle className="flex items-center gap-2 text-sm">
+   365→            <FileText className="h-4 w-4 text-primary" />
+   366→            {doc.fileName}
+   367→          </DialogTitle>
+   368→        </DialogHeader>
+   369→        <div className="space-y-3 px-5 py-4 text-xs overflow-y-auto scrollbar-thin flex-1">
+   370→          <div className="flex items-center justify-between">
+   371→            <span className="text-muted-foreground">Type</span>
+   372→            <span className="font-medium capitalize">{doc.documentType.replace(/([A-Z])/g, " $1")}</span>
+   373→          </div>
+   374→          {doc.sourceInstitution && (
+   375→            <div className="flex items-center justify-between">
+   376→              <span className="text-muted-foreground">Institution</span>
+   377→              <span className="font-medium">{doc.sourceInstitution}</span>
+   378→            </div>
+   379→          )}
+   380→          <div className="flex items-center justify-between">
+   381→            <span className="text-muted-foreground">Status</span>
+   382→            <Badge variant="outline" className={cn("text-[9px]", (STATUS_STYLE[doc.extractionStatus] ?? STATUS_STYLE.pending).cls)}>
+   383→              {(STATUS_STYLE[doc.extractionStatus] ?? STATUS_STYLE.pending).icon}
+   384→              {doc.extractionStatus}
+   385→            </Badge>
+   386→          </div>
+   387→
+   388→          {doc.documentType !== "bankStatement" && Object.keys(fields).length > 0 && (
+   389→            <>
+   390→              <div className="border-t pt-2">
+   391→                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   392→                  Extracted Fields
+   393→                </p>
+   394→                <dl className="space-y-1">
+   395→                  {fields.loanFields?.lender && <FieldRow label="Lender" value={fields.loanFields.lender} />}
+   396→                  {fields.loanFields?.principal && <FieldRow label="Principal" value={formatINR(fields.loanFields.principal)} />}
+   397→                  {fields.loanFields?.emiAmount && <FieldRow label="EMI Amount" value={formatINR(fields.loanFields.emiAmount)} />}
+   398→                  {fields.loanFields?.tenure && <FieldRow label="Tenure" value={`${fields.loanFields.tenure} months`} />}
+   399→                  {fields.loanFields?.dueDay && <FieldRow label="Due Day" value={String(fields.loanFields.dueDay)} />}
+   400→                  {fields.loanFields?.interestRate && <FieldRow label="Interest Rate" value={`${fields.loanFields.interestRate}%`} />}
+   401→                  {fields.loanFields?.loanRef && <FieldRow label="Loan Ref" value={fields.loanFields.loanRef} />}
+   402→                </dl>
+   403→              </div>
+   404→
+   405→              {/* Summary */}
+   406→              {fields.loanFields && (
+   407→                <div className="border-t pt-2">
+   408→                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   409→                    Summary
+   410→                  </p>
+   411→                  <div className="rounded-lg bg-muted/20 p-2.5">
+   412→                    <pre className="whitespace-pre-wrap text-[11px] leading-relaxed">
+   413→                      {fields.loanFields.lender ? `${fields.loanFields.lender} loan` : "Loan"}
+   414→                      {fields.loanFields.principal ? ` of ₹${fields.loanFields.principal.toLocaleString("en-IN")}` : ""}
+   415→                      {fields.loanFields.emiAmount ? ` with EMI ₹${fields.loanFields.emiAmount.toLocaleString("en-IN")}` : ""}
+   416→                      {fields.loanFields.tenure ? ` for ${fields.loanFields.tenure} months` : ""}
+   417→                      {fields.loanFields.interestRate ? ` at ${fields.loanFields.interestRate}% p.a.` : ""}
+   418→                      {"\n"}
+   419→                      {fields.loanFields.emiAmount && fields.loanFields.tenure
+   420→                        ? `Total payable: ₹${(fields.loanFields.emiAmount * fields.loanFields.tenure).toLocaleString("en-IN")}`
+   421→                        : ""}
+   422→                    </pre>
+   423→                  </div>
+   424→                </div>
+   425→              )}
+   426→
+   427→              {/* Terms & Conditions */}
+   428→              {fields.termsAndConditions && fields.termsAndConditions.length > 0 && (
+   429→                <div className="border-t pt-2">
+   430→                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   431→                    Terms & Conditions ({fields.termsAndConditions.length})
+   432→                  </p>
+   433→                  <ul className="space-y-1">
+   434→                    {fields.termsAndConditions.map((tc: string, i: number) => (
+   435→                      <li key={i} className="flex items-start gap-1.5 text-[11px]">
+   436→                        <span className="mt-0.5 shrink-0 text-primary">•</span>
+   437→                        <span className="text-muted-foreground">{tc}</span>
+   438→                      </li>
+   439→                    ))}
+   440→                  </ul>
+   441→                </div>
+   442→              )}
+   443→
+   444→              {/* EMI Schedule preview */}
+   445→              {fields.emiSchedule && fields.emiSchedule.length > 0 && (
+   446→                <div className="border-t pt-2">
+   447→                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   448→                    EMI Schedule ({fields.emiSchedule.length} installments)
+   449→                  </p>
+   450→                  <div className="max-h-32 overflow-y-auto scrollbar-thin rounded-lg border">
+   451→                    <table className="w-full text-[10px]">
+   452→                      <thead className="sticky top-0 bg-muted/50">
+   453→                        <tr>
+   454→                          <th className="px-2 py-1 text-left font-medium">#</th>
+   455→                          <th className="px-2 py-1 text-left font-medium">Date</th>
+   456→                          <th className="px-2 py-1 text-right font-medium">Amount</th>
+   457→                          <th className="px-2 py-1 text-right font-medium">Status</th>
+   458→                        </tr>
+   459→                      </thead>
+   460→                      <tbody>
+   461→                        {fields.emiSchedule.slice(0, 12).map((emi: { installmentNumber: number; dueDate: string; amount: number; status: string }, i: number) => (
+   462→                          <tr key={i} className="border-t">
+   463→                            <td className="px-2 py-0.5">{emi.installmentNumber}</td>
+   464→                            <td className="px-2 py-0.5">{new Date(emi.dueDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</td>
+   465→                            <td className="px-2 py-0.5 text-right tabular-nums">{formatINR(emi.amount)}</td>
+   466→                            <td className={cn("px-2 py-0.5 text-right font-medium",
+   467→                              emi.status === "paid" ? "text-emerald-600" :
+   468→                              emi.status === "overdue" ? "text-rose-600" : "text-muted-foreground"
+   469→                            )}>{emi.status}</td>
+   470→                          </tr>
+   471→                        ))}
+   472→                      </tbody>
+   473→                    </table>
+   474→                  </div>
+   475→                  {fields.emiSchedule.length > 12 && (
+   476→                    <p className="mt-1 text-[9px] text-muted-foreground">
+   477→                      + {fields.emiSchedule.length - 12} more installments — view full schedule in Loans section
+   478→                    </p>
+   479→                  )}
+   480→                </div>
+   481→              )}
+   482→            </>
+   483→          )}
+   484→
+   485→          {recon && (
+   486→            <div className="border-t pt-2">
+   487→              <div className="mb-2 flex items-center gap-1.5">
+   488→                <TrendingUp className="h-3 w-3 text-primary" />
+   489→                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   490→                  Reconciliation
+   491→                </p>
+   492→              </div>
+   493→              <div className="grid grid-cols-3 gap-2 text-center">
+   494→                <div className="rounded-lg border bg-emerald-500/5 p-2">
+   495→                  <p className="text-base font-semibold text-emerald-600 dark:text-emerald-400">{recon.matched}</p>
+   496→                  <p className="text-[9px] text-muted-foreground">Matched</p>
+   497→                </div>
+   498→                <div className="rounded-lg border bg-amber-500/5 p-2">
+   499→                  <p className="text-base font-semibold text-amber-600 dark:text-amber-400">{recon.missed}</p>
+   500→                  <p className="text-[9px] text-muted-foreground">Missed</p>
+   501→                </div>
+   502→                <div className="rounded-lg border bg-rose-500/5 p-2">
+   503→                  <p className="text-base font-semibold text-rose-600 dark:text-rose-400">{recon.extra}</p>
+   504→                  <p className="text-[9px] text-muted-foreground">Extra</p>
+   505→                </div>
+   506→              </div>
+   507→              <div className="mt-2 flex items-center justify-between rounded-lg border bg-muted/20 px-3 py-1.5">
+   508→                <span className="text-[10px] text-muted-foreground">Match Rate</span>
+   509→                <span className="text-sm font-bold tabular-nums">{recon.matchRate}%</span>
+   510→              </div>
+   511→
+   512→              {/* Actionable reconciliation items (feedback loop) */}
+   513→              {recon.details && Array.isArray(recon.details) && recon.details.some((d: { status: string }) => d.status !== "matched") && (
+   514→                <ReconciliationActions docId={doc.id} details={recon.details} />
+   515→              )}
+   516→            </div>
+   517→          )}
+   518→        </div>
+   519→      </DialogContent>
+   520→    </Dialog>
+   521→  );
+   522→}
+   523→
+   524→function ReconciliationActions({
+   525→  docId,
+   526→  details,
+   527→}: {
+   528→  docId: string;
+   529→  details: Array<{
+   530→    statementRow?: { date?: string; description?: string; amount?: number; type?: string };
+   531→    matchedTransactionId?: string;
+   532→    status: "matched" | "missed" | "extra";
+   533→  }>;
+   534→}) {
+   535→  const reconcileMut = useReconcileAction();
+   536→  const [dismissed, setDismissed] = useState<Set<number>>(new Set());
+   537→
+   538→  const actionable = details
+   539→    .map((d, i) => ({ ...d, idx: i }))
+   540→    .filter((d) => d.status !== "matched" && !dismissed.has(d.idx));
+   541→
+   542→  if (actionable.length === 0) return null;
+   543→
+   544→  const handleAction = async (
+   545→    item: typeof actionable[number],
+   546→    action: "add" | "flag" | "ignore"
+   547→  ) => {
+   548→    try {
+   549→      await reconcileMut.mutateAsync({
+   550→        action,
+   551→        documentId: docId,
+   552→        statementRow: item.statementRow,
+   553→        transactionId: item.matchedTransactionId,
+   554→      });
+   555→      setDismissed((prev) => new Set(prev).add(item.idx));
+   556→      if (action === "add") {
+   557→        toast.success("Transaction added from statement", {
+   558→          description: `${item.statementRow?.description} — ₹${item.statementRow?.amount}`,
+   559→        });
+   560→      } else if (action === "flag") {
+   561→        toast.success("Transaction flagged for review");
+   562→      } else {
+   563→        toast.info("Item dismissed");
+   564→      }
+   565→    } catch (e) {
+   566→      toast.error(e instanceof Error ? e.message : "Action failed");
+   567→    }
+   568→  };
+   569→
+   570→  return (
+   571→    <div className="mt-2 space-y-1.5">
+   572→      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+   573→        Review Items ({actionable.length})
+   574→      </p>
+   575→      <ScrollArea className="max-h-40">
+   576→        <ul className="space-y-1">
+   577→          {actionable.map((item) => (
+   578→            <li
+   579→              key={item.idx}
+   580→              className="flex items-center gap-2 rounded-md border bg-card px-2 py-1.5"
+   581→            >
+   582→              <span
+   583→                className={cn(
+   584→                  "inline-flex shrink-0 items-center gap-0.5 rounded-full border px-1.5 py-0 text-[8px] font-medium",
+   585→                  item.status === "missed"
+   586→                    ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+   587→                    : "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+   588→                )}
+   589→              >
+   590→                {item.status === "missed" ? "Missed" : "Extra"}
+   591→              </span>
+   592→              <span className="min-w-0 flex-1 truncate text-[10px]">
+   593→                {item.statementRow?.description ?? `SMS transaction ${item.matchedTransactionId?.slice(-6)}`}
+   594→                {item.statementRow?.amount && (
+   595→                  <span className="ml-1 font-medium tabular-nums">
+   596→                    ₹{item.statementRow.amount}
+   597→                  </span>
+   598→                )}
+   599→              </span>
+   600→              <div className="flex shrink-0 gap-0.5">
+   601→                {item.status === "missed" && (
+   602→                  <Button
+   603→                    variant="ghost"
+   604→                    size="sm"
+   605→                    onClick={() => handleAction(item, "add")}
+   606→                    disabled={reconcileMut.isPending}
+   607→                    className="h-5 px-1.5 text-[9px] text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:text-emerald-300"
+   608→                    title="Add as transaction"
+   609→                  >
+   610→                    Add
+   611→                  </Button>
+   612→                )}
+   613→                {item.status === "extra" && (
+   614→                  <Button
+   615→                    variant="ghost"
+   616→                    size="sm"
+   617→                    onClick={() => handleAction(item, "flag")}
+   618→                    disabled={reconcileMut.isPending}
+   619→                    className="h-5 px-1.5 text-[9px] text-amber-600 hover:bg-amber-500/10 hover:text-amber-700 dark:text-amber-300"
+   620→                    title="Flag for review"
+   621→                  >
+   622→                    Flag
+   623→                  </Button>
+   624→                )}
+   625→                <Button
+   626→                  variant="ghost"
+   627→                  size="sm"
+   628→                  onClick={() => handleAction(item, "ignore")}
+   629→                  disabled={reconcileMut.isPending}
+   630→                  className="h-5 px-1.5 text-[9px] text-muted-foreground hover:bg-muted"
+   631→                  title="Dismiss"
+   632→                >
+   633→                  ✕
+   634→                </Button>
+   635→              </div>
+   636→            </li>
+   637→          ))}
+   638→        </ul>
+   639→      </ScrollArea>
+   640→    </div>
+   641→  );
+   642→}
+   643→
+   644→function FieldRow({ label, value }: { label: string; value: string }) {
+   645→  return (
+   646→    <div className="flex items-center justify-between">
+   647→      <dt className="text-muted-foreground">{label}</dt>
+   648→      <dd className="font-medium">{value}</dd>
+   649→    </div>
+   650→  );
+   651→}
+   652→

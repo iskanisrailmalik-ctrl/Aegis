@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Aegis Web Flavor Manifest — Phase E
+  ===================================
+  This manifest is MERGED with the main AndroidManifest.xml for the "web" flavor.
+  It REMOVES all SMS permissions and components by using tools:node="remove".
+
+  Result: The web flavor is a pure WebView shell with NO SMS permissions.
+  This makes it Play Store compliant (no restricted permissions).
+
+  The web flavor is used for:
+  - Play Store listing (TWA / PWA wrapper)
+  - iOS (via Capacitor, if ever added)
+  - Desktop installs
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Remove all SMS permissions for web flavor -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_SMS" tools:node="remove" />
+    <uses-permission android:name="android.permission.SEND_SMS" tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_SMS" tools:node="remove" />
+    <uses-permission android:name="android.permission.RECEIVE_MMS" tools:node="remove" />
+    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" tools:node="remove" />
+
+    <!-- Remove SMS BroadcastReceivers (not needed in web flavor) -->
+    <receiver android:name="com.aegis.sms.SmsDeliverReceiver" tools:node="remove" />
+    <receiver android:name="com.aegis.sms.WapPushDeliverReceiver" tools:node="remove" />
+
+    <!-- Remove SMS service (not needed in web flavor) -->
+    <service android:name="com.aegis.sms.HeadlessSmsSendService" tools:node="remove" />
+
+    <!-- Remove compose intent filter (web flavor doesn't handle ACTION_SENDTO) -->
+    <!-- The MainActivity intent-filter for SENDTO is removed via the activity node -->
+    <activity
+        android:name="com.aegis.sms.MainActivity"
+        tools:node="merge">
+        <!-- Remove the SENDTO intent filter -->
+        <intent-filter tools:node="remove" />
+    </activity>
+
+</manifest>
